@@ -10,6 +10,7 @@ import Tareas from './pages/Tareas'
 import Horas from './pages/Horas'
 import Reportes from './pages/Reportes'
 import Usuarios from './pages/Usuarios'
+import Archivados from './pages/Archivados'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { user, perfil, loading } = useAuth()
@@ -34,6 +35,7 @@ function AppRoutes() {
         <Route path="/tareas" element={<Tareas />} />
         <Route path="/horas" element={<Horas />} />
         <Route path="/reportes" element={<Reportes />} />
+        <Route path="/archivados" element={<Archivados />} />
         <Route path="/usuarios" element={<ProtectedRoute adminOnly><Usuarios /></ProtectedRoute>} />
       </Route>
     </Routes>
