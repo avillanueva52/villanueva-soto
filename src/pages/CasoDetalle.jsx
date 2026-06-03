@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { ArrowLeft, Upload, Plus, Trash2, FileText, Clock, CheckSquare, Edit2, Save, X } from 'lucide-react'
+import { ArrowLeft, Upload, Plus, Trash2, FileText, Clock, CheckSquare, Edit2, Save, X, Activity } from 'lucide-react'
 
 const TIPOS_TAREA = ['redaccion', 'investigacion', 'audiencia', 'reunion', 'tramite', 'consulta', 'revision', 'otro']
 const TIPOS_TAREA_LABELS = { redaccion: 'Redacción', investigacion: 'Investigación', audiencia: 'Audiencia', reunion: 'Reunión', tramite: 'Trámite', consulta: 'Consulta', revision: 'Revisión', otro: 'Otro' }
@@ -15,16 +15,19 @@ export default function CasoDetalle() {
   const [documentos, setDocumentos] = useState([])
   const [horas, setHoras] = useState([])
   const [tareas, setTareas] = useState([])
+  const [estados, setEstados] = useState([])
   const [abogados, setAbogados] = useState([])
   const [clientes, setClientes] = useState([])
   const [tab, setTab] = useState('info')
   const [loading, setLoading] = useState(true)
   const [showHorasModal, setShowHorasModal] = useState(false)
   const [showTareaModal, setShowTareaModal] = useState(false)
+  const [showEstadoModal, setShowEstadoModal] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [horaForm, setHoraForm] = useState({ tipo_tarea: 'redaccion', horas: '', descripcion: '', fecha: new Date().toISOString().split('T')[0] })
   const [tareaForm, setTareaForm] = useState({ titulo: '', descripcion: '', prioridad: 'media', asignado_a: '', fecha_vencimiento: '' })
+  const [estadoForm, setEstadoForm] = useState({ titulo: '', descripcion: '', fecha: new Date().toISOString().split('T')[0] })
   const [saving, setSaving] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const fileRef = useRef()
@@ -32,11 +35,12 @@ export default function CasoDetalle() {
   useEffect(() => { loadAll() }, [id])
 
   async function loadAll() {
-    const [casoRes, docsRes, horasRes, tareasRes, abogadosRes, clientesRes] = await Promise.all([
+    const [casoRes, docsRes, horasRes, tareasRes, estadosRes, abogadosRes, clientesRes] = await Promise.all([
       supabase.from('casos').select('*, clientes(id,nombre), perfiles(id,nombre)').eq('id', id).single(),
       supabase.from('documentos').select('*, perfiles(nombre)').eq('caso_id', id).order('fecha_documento', { ascending: false }),
       supabase.from('horas_trabajadas').select('*, perfiles(nombre,rol)').eq('caso_id', id).order('fecha', { ascending: false }),
       supabase.from('tareas').select('*, perfiles!tareas_asignado_a_fkey(nombre)').eq('caso_id', id).order('creado_en', { ascending: false }),
+      supabase.from('estados_procesales').select('*, perfiles(nombre)').eq('caso_id', id).order('fecha', { ascending: false }),
       supabase.from('perfiles').select('id,nombre,rol').eq('activo', true).order('nombre'),
       supabase.from('clientes').select('id,nombre').order('nombre')
     ])
@@ -45,6 +49,7 @@ export default function CasoDetalle() {
     setDocumentos(docsRes.data || [])
     setHoras(horasRes.data || [])
     setTareas(tareasRes.data || [])
+    setEstados(estadosRes.data || [])
     setAbogados(abogadosRes.data || [])
     setClientes(clientesRes.data || [])
     setLoading(false)
@@ -106,6 +111,22 @@ export default function CasoDetalle() {
     setSaving(false)
   }
 
+  async function handleSaveEstado(e) {
+    e.preventDefault()
+    setSaving(true)
+    await supabase.from('estados_procesales').insert({ ...estadoForm, caso_id: id, perfil_id: perfil.id })
+    setShowEstadoModal(false)
+    setEstadoForm({ titulo: '', descripcion: '', fecha: new Date().toISOString().split('T')[0] })
+    loadAll()
+    setSaving(false)
+  }
+
+  async function handleDeleteEstado(estadoId) {
+    if (!confirm('¿Eliminar este estado procesal?')) return
+    await supabase.from('estados_procesales').delete().eq('id', estadoId)
+    loadAll()
+  }
+
   async function toggleTarea(tarea) {
     const nuevoEstado = tarea.estado === 'completada' ? 'pendiente' : 'completada'
     await supabase.from('tareas').update({ estado: nuevoEstado }).eq('id', tarea.id)
@@ -142,7 +163,13 @@ export default function CasoDetalle() {
       </div>
 
       <div className="tabs">
-        {[['info', 'Información'], ['documentos', `Documentos (${documentos.length})`], ['horas', `Horas (${totalHoras.toFixed(1)}h)`], ['tareas', `Tareas (${tareas.filter(t=>t.estado!=='completada').length})`]].map(([key, label]) => (
+        {[
+          ['info', 'Información'],
+          ['estado', `Estado Procesal (${estados.length})`],
+          ['documentos', `Documentos (${documentos.length})`],
+          ['horas', `Horas (${totalHoras.toFixed(1)}h)`],
+          ['tareas', `Tareas (${tareas.filter(t=>t.estado!=='completada').length})`]
+        ].map(([key, label]) => (
           <div key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</div>
         ))}
       </div>
@@ -186,7 +213,7 @@ export default function CasoDetalle() {
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Resumen</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {[['Documentos', documentos.length], ['Horas', totalHoras.toFixed(1) + 'h'], ['Tareas Pend.', tareas.filter(t => t.estado !== 'completada').length], ['Completadas', tareas.filter(t => t.estado === 'completada').length]].map(([label, val]) => (
+                {[['Documentos', documentos.length], ['Horas', totalHoras.toFixed(1) + 'h'], ['Tareas Pend.', tareas.filter(t => t.estado !== 'completada').length], ['Estados', estados.length]].map(([label, val]) => (
                   <div key={label} style={{ background: 'var(--cream)', borderRadius: 8, padding: '12px 14px' }}>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>{val}</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{label}</div>
@@ -194,7 +221,55 @@ export default function CasoDetalle() {
                 ))}
               </div>
             </div>
+            {estados.length > 0 && (
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>Último Estado</div>
+                <div style={{ background: 'var(--navy)', borderRadius: 8, padding: '12px 14px', color: 'white' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--gold-light)', marginBottom: 4 }}>{new Date(estados[0].fecha).toLocaleDateString('es-PE')}</div>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{estados[0].titulo}</div>
+                  {estados[0].descripcion && <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{estados[0].descripcion}</div>}
+                </div>
+              </div>
+            )}
           </div>
+        </div>
+      )}
+
+      {tab === 'estado' && (
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <div className="card-title">Estado Procesal</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Historial cronológico del avance del caso</div>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowEstadoModal(true)}><Plus size={14} />Nuevo Estado</button>
+          </div>
+
+          {estados.length === 0 ? (
+            <div className="empty-state"><Activity size={36} /><p>No hay estados registrados aún</p></div>
+          ) : (
+            <div style={{ position: 'relative', paddingLeft: 28 }}>
+              <div style={{ position: 'absolute', left: 10, top: 0, bottom: 0, width: 2, background: 'var(--border)' }}></div>
+              {estados.map((e, i) => (
+                <div key={e.id} style={{ position: 'relative', marginBottom: 20 }}>
+                  <div style={{ position: 'absolute', left: -24, top: 4, width: 12, height: 12, borderRadius: '50%', background: i === 0 ? 'var(--gold)' : 'var(--border)', border: '2px solid white', boxShadow: '0 0 0 2px ' + (i === 0 ? 'var(--gold)' : 'var(--border)') }}></div>
+                  <div style={{ background: i === 0 ? 'var(--navy)' : 'var(--cream)', borderRadius: 8, padding: '12px 16px', color: i === 0 ? 'white' : 'var(--text-primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '0.72rem', color: i === 0 ? 'var(--gold-light)' : 'var(--text-muted)', marginBottom: 3 }}>
+                          {new Date(e.fecha).toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                          {e.perfiles?.nombre && ` · ${e.perfiles.nombre}`}
+                        </div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{e.titulo}</div>
+                        {e.descripcion && <div style={{ fontSize: '0.82rem', marginTop: 4, color: i === 0 ? 'rgba(255,255,255,0.75)' : 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{e.descripcion}</div>}
+                      </div>
+                      <button className="btn-icon" onClick={() => handleDeleteEstado(e.id)} style={{ border: 'none', color: i === 0 ? 'rgba(255,255,255,0.4)' : 'var(--text-muted)', marginLeft: 8, flexShrink: 0 }}><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -284,6 +359,27 @@ export default function CasoDetalle() {
         </div>
       )}
 
+      {/* MODAL ESTADO PROCESAL */}
+      {showEstadoModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowEstadoModal(false)}>
+          <div className="modal">
+            <div className="modal-header"><div className="modal-title">Nuevo Estado Procesal</div><button className="btn-icon" onClick={() => setShowEstadoModal(false)}>✕</button></div>
+            <form onSubmit={handleSaveEstado}>
+              <div className="modal-body">
+                <div className="form-group"><label className="form-label">Título del estado *</label><input className="form-input" value={estadoForm.titulo} onChange={e => setEstadoForm({ ...estadoForm, titulo: e.target.value })} placeholder="Ej: Se presentó la demanda, Audiencia señalada..." required /></div>
+                <div className="form-group"><label className="form-label">Fecha</label><input className="form-input" type="date" value={estadoForm.fecha} onChange={e => setEstadoForm({ ...estadoForm, fecha: e.target.value })} /></div>
+                <div className="form-group"><label className="form-label">Descripción / Detalle</label><textarea className="form-textarea" value={estadoForm.descripcion} onChange={e => setEstadoForm({ ...estadoForm, descripcion: e.target.value })} placeholder="Detalles adicionales del estado procesal..." /></div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowEstadoModal(false)}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Guardando...' : 'Registrar Estado'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL HORAS */}
       {showHorasModal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowHorasModal(false)}>
           <div className="modal">
@@ -306,6 +402,7 @@ export default function CasoDetalle() {
         </div>
       )}
 
+      {/* MODAL TAREA */}
       {showTareaModal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowTareaModal(false)}>
           <div className="modal">
