@@ -103,8 +103,8 @@ export default function CasoDetalle() {
       alert('No se pudo determinar la ruta del documento.')
       return
     }
-    // Generamos un enlace firmado temporal (válido 1 hora) para acceder al archivo privado
-    const { data, error } = await supabase.storage.from('documentos').createSignedUrl(path, 3600)
+    // Generamos un enlace firmado temporal (válido 1 hora). download: false permite previsualizar PDFs e imágenes en el navegador en vez de descargarlos directamente
+    const { data, error } = await supabase.storage.from('documentos').createSignedUrl(path, 3600, { download: false })
     if (error) {
       alert('No se pudo abrir el documento: ' + error.message)
       return
