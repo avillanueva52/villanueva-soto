@@ -105,13 +105,29 @@ export default function Dashboard() {
             <div className="empty-state"><CheckSquare size={32} /><p>Sin tareas urgentes pendientes</p></div>
           ) : (
             tareasUrgentes.map(t => (
-              <div key={t.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
-                <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{t.titulo}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                  {t.casos?.numero_expediente} · {t.perfiles?.nombre}
-                  {t.fecha_vencimiento && ` · Vence: ${formatearFecha(t.fecha_vencimiento)}`}
+              t.caso_id ? (
+                <Link
+                  key={t.id}
+                  to={`/casos/${t.caso_id}`}
+                  style={{ display: 'block', padding: '10px 8px', margin: '0 -8px', borderBottom: '1px solid var(--border-light)', textDecoration: 'none', color: 'inherit', borderRadius: 4, transition: 'background 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--cream)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{t.titulo}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                    {t.casos?.numero_expediente} · {t.perfiles?.nombre}
+                    {t.fecha_vencimiento && ` · Vence: ${formatearFecha(t.fecha_vencimiento)}`}
+                  </div>
+                </Link>
+              ) : (
+                <div key={t.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
+                  <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{t.titulo}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                    {t.casos?.numero_expediente} · {t.perfiles?.nombre}
+                    {t.fecha_vencimiento && ` · Vence: ${formatearFecha(t.fecha_vencimiento)}`}
+                  </div>
                 </div>
-              </div>
+              )
             ))
           )}
         </div>
