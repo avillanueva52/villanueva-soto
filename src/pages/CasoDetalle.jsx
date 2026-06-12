@@ -1,25 +1,13 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { hoyEnLima, formatearFecha } from '../lib/dateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { ArrowLeft, Upload, Plus, Trash2, FileText, Clock, CheckSquare, Edit2, Save, X, Activity } from 'lucide-react'
 
 const TIPOS_TAREA = ['redaccion', 'investigacion', 'audiencia', 'reunion', 'tramite', 'consulta', 'revision', 'otro']
 const TIPOS_TAREA_LABELS = { redaccion: 'Redacción', investigacion: 'Investigación', audiencia: 'Audiencia', reunion: 'Reunión', tramite: 'Trámite', consulta: 'Consulta', revision: 'Revisión', otro: 'Otro' }
 
-// Devuelve la fecha de hoy en zona horaria de Lima (UTC-5) en formato YYYY-MM-DD. Evita el bug clásico de UTC que muestra un día atrás.
-function hoyEnLima() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
-}
-
-// Formatea una fecha tipo 'YYYY-MM-DD' (proveniente de la base de datos) sin conversión UTC, evitando que se muestre el día anterior.
-function formatearFecha(fechaStr, opciones = {}) {
-  if (!fechaStr) return '—'
-  const partes = String(fechaStr).split('T')[0].split('-')
-  if (partes.length !== 3) return fechaStr
-  const fecha = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]))
-  return fecha.toLocaleDateString('es-PE', opciones)
-}
 
 export default function CasoDetalle() {
   const { id } = useParams()
