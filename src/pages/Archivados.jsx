@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { formatearFecha } from '../lib/dateUtils'
 import { useNavigate } from 'react-router-dom'
 import { FolderOpen, Users, RotateCcw } from 'lucide-react'
 
@@ -71,7 +72,7 @@ export default function Archivados() {
                       <td style={{ color: 'var(--text-secondary)' }}>{c.perfiles?.nombre || '—'}</td>
                       <td><span className={`badge badge-${c.tipo}`} style={{ textTransform: 'capitalize' }}>{c.tipo}</span></td>
                       <td><span className={`badge badge-${c.estado}`} style={{ textTransform: 'capitalize' }}>{c.estado}</span></td>
-                      <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{c.fecha_cierre ? new Date(c.fecha_cierre).toLocaleDateString('es-PE') : '—'}</td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{formatearFecha(c.fecha_cierre)}</td>
                       <td>
                         <button className="btn btn-sm btn-outline" onClick={() => reactivarCaso(c.id)} title="Reactivar">
                           <RotateCcw size={13} />Reactivar
