@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { inicioMesEnLima, formatearFecha } from '../lib/dateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { Link } from 'react-router-dom'
 import { FolderOpen, Users, Clock, CheckSquare, AlertCircle, TrendingUp } from 'lucide-react'
@@ -23,7 +24,7 @@ export default function Dashboard() {
       supabase.from('casos').select('tipo, estado'),
       supabase.from('clientes').select('id', { count: 'exact', head: true }),
       supabase.from('tareas').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente'),
-      supabase.from('horas_trabajadas').select('horas').gte('fecha', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]),
+      supabase.from('horas_trabajadas').select('horas').gte('fecha', inicioMesEnLima()),
       supabase.from('casos').select('*, clientes(nombre), perfiles(nombre)').order('creado_en', { ascending: false }).limit(5),
       supabase.from('tareas').select('*, casos(titulo, numero_expediente), perfiles!tareas_asignado_a_fkey(nombre)').eq('estado', 'pendiente').eq('prioridad', 'alta').order('fecha_vencimiento').limit(5)
     ])
@@ -108,7 +109,7 @@ export default function Dashboard() {
                 <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{t.titulo}</div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
                   {t.casos?.numero_expediente} · {t.perfiles?.nombre}
-                  {t.fecha_vencimiento && ` · Vence: ${new Date(t.fecha_vencimiento).toLocaleDateString('es-PE')}`}
+                  {t.fecha_vencimiento && ` · Vence: ${formatearFecha(t.fecha_vencimiento)}`}
                 </div>
               </div>
             ))
