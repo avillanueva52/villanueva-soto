@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { Plus, Search, Users, Edit2, X, Save } from 'lucide-react'
+import { Plus, Search, Users, Edit2 } from 'lucide-react'
 
 export default function Clientes() {
+  const navigate = useNavigate()
   const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -20,7 +22,12 @@ export default function Clientes() {
   }
 
   function openNew() { setForm({ nombre: '', tipo: 'persona_natural', documento_identidad: '', email: '', telefono: '', direccion: '', notas: '' }); setEditando(null); setShowModal(true) }
-  function openEdit(c) { setForm({ nombre: c.nombre, tipo: c.tipo, documento_identidad: c.documento_identidad || '', email: c.email || '', telefono: c.telefono || '', direccion: c.direccion || '', notas: c.notas || '' }); setEditando(c.id); setShowModal(true) }
+  function openEdit(e, c) {
+    e.stopPropagation()
+    setForm({ nombre: c.nombre, tipo: c.tipo, documento_identidad: c.documento_identidad || '', email: c.email || '', telefono: c.telefono || '', direccion: c.direccion || '', notas: c.notas || '' })
+    setEditando(c.id)
+    setShowModal(true)
+  }
 
   async function handleSave(e) {
     e.preventDefault()
@@ -64,14 +71,14 @@ export default function Clientes() {
                 {filtered.length === 0 ? (
                   <tr><td colSpan={7}><div className="empty-state"><Users size={36} /><p>No se encontraron clientes</p></div></td></tr>
                 ) : filtered.map(c => (
-                  <tr key={c.id}>
-                    <td style={{ fontWeight: 600 }}>{c.nombre}</td>
+                  <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/clientes/${c.id}`)}>
+                    <td style={{ fontWeight: 600, color: 'var(--navy)' }}>{c.nombre}</td>
                     <td><span style={{ fontSize: '0.75rem', background: c.tipo === 'empresa' ? 'var(--info-bg)' : 'var(--cream)', color: c.tipo === 'empresa' ? 'var(--info)' : 'var(--text-secondary)', padding: '2px 8px', borderRadius: 4, fontWeight: 500 }}>{c.tipo === 'empresa' ? 'Empresa' : 'Persona Natural'}</span></td>
                     <td style={{ color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.82rem' }}>{c.documento_identidad || '—'}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{c.email || '—'}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{c.telefono || '—'}</td>
                     <td><span style={{ background: 'var(--navy)', color: 'white', borderRadius: 20, padding: '2px 10px', fontSize: '0.75rem', fontWeight: 700 }}>{c.casos?.length || 0}</span></td>
-                    <td><button className="btn-icon" onClick={() => openEdit(c)}><Edit2 size={14} /></button></td>
+                    <td><button className="btn-icon" onClick={(e) => openEdit(e, c)} title="Editar cliente"><Edit2 size={14} /></button></td>
                   </tr>
                 ))}
               </tbody>
