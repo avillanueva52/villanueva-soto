@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { hoyEnLima, formatearFecha } from '../lib/dateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { CheckSquare, Filter } from 'lucide-react'
 
@@ -34,7 +35,7 @@ export default function Tareas() {
     return true
   })
 
-  const hoy = new Date().toISOString().split('T')[0]
+  const hoy = hoyEnLima()
   const isVencida = (t) => t.fecha_vencimiento && t.fecha_vencimiento < hoy && t.estado !== 'completada'
 
   const estadoIcon = { pendiente: '⏳', en_progreso: '🔄', completada: '✅' }
@@ -95,7 +96,7 @@ export default function Tareas() {
                     <td>
                       {t.fecha_vencimiento ? (
                         <span style={{ fontSize: '0.78rem', color: isVencida(t) ? 'var(--danger)' : 'var(--text-muted)', fontWeight: isVencida(t) ? 600 : 400 }}>
-                          {isVencida(t) ? '⚠️ ' : ''}{new Date(t.fecha_vencimiento).toLocaleDateString('es-PE')}
+                          {isVencida(t) ? '⚠️ ' : ''}{formatearFecha(t.fecha_vencimiento)}
                         </span>
                       ) : '—'}
                     </td>
