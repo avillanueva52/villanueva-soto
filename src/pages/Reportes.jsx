@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { mesActualEnLima, ultimoDiaDelMes } from '../lib/dateUtils'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import { Download, BarChart2 } from 'lucide-react'
 
@@ -8,7 +9,7 @@ const TIPOS_LABELS = { redaccion: 'Redacción', investigacion: 'Investigación',
 
 export default function Reportes() {
   const [tab, setTab] = useState('eficiencia')
-  const [mes, setMes] = useState(new Date().toISOString().slice(0, 7))
+  const [mes, setMes] = useState(mesActualEnLima())
   const [data, setData] = useState({ abogados: [], casos: [], clientes: [], tiposHoras: [] })
   const [loading, setLoading] = useState(true)
   const [casosData, setCasosData] = useState([])
@@ -18,7 +19,7 @@ export default function Reportes() {
   async function loadReportes() {
     setLoading(true)
     const inicio = mes + '-01'
-    const fin = new Date(mes.slice(0,4), parseInt(mes.slice(5,7)), 0).toISOString().split('T')[0]
+    const fin = ultimoDiaDelMes(mes)
 
     const [horasRes, perfilesRes, casosRes] = await Promise.all([
       supabase.from('horas_trabajadas').select('*, perfiles(id,nombre,rol,costo_hora), casos(id,titulo,numero_expediente,tipo,clientes(nombre))').gte('fecha', inicio).lte('fecha', fin),
