@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { hoyEnLima, formatearFecha } from '../lib/dateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, FolderOpen } from 'lucide-react'
@@ -19,7 +20,7 @@ export default function Casos() {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('activo')
   const [filtroAbogado, setFiltroAbogado] = useState('')
-  const [form, setForm] = useState({ numero_expediente: '', titulo: '', tipo: 'civil', estado: 'activo', cliente_id: '', abogado_responsable_id: '', juzgado: '', numero_judicial: '', descripcion: '', fecha_inicio: new Date().toISOString().split('T')[0] })
+  const [form, setForm] = useState({ numero_expediente: '', titulo: '', tipo: 'civil', estado: 'activo', cliente_id: '', abogado_responsable_id: '', juzgado: '', numero_judicial: '', descripcion: '', fecha_inicio: hoyEnLima() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -45,7 +46,7 @@ export default function Casos() {
     const { error } = await supabase.from('casos').insert(payload)
     if (error) { setError(error.message); setSaving(false); return }
     setShowModal(false)
-    setForm({ numero_expediente: '', titulo: '', tipo: 'civil', estado: 'activo', cliente_id: '', abogado_responsable_id: '', juzgado: '', numero_judicial: '', descripcion: '', fecha_inicio: new Date().toISOString().split('T')[0] })
+    setForm({ numero_expediente: '', titulo: '', tipo: 'civil', estado: 'activo', cliente_id: '', abogado_responsable_id: '', juzgado: '', numero_judicial: '', descripcion: '', fecha_inicio: hoyEnLima() })
     loadData()
     setSaving(false)
   }
@@ -117,7 +118,7 @@ export default function Casos() {
                     <td style={{ color: 'var(--text-secondary)' }}>{c.perfiles?.nombre || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                     <td><span className={`badge badge-${c.tipo}`} style={{ textTransform: 'capitalize' }}>{c.tipo}</span></td>
                     <td><span className={`badge badge-${c.estado}`} style={{ textTransform: 'capitalize' }}>{c.estado}</span></td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{c.fecha_inicio ? new Date(c.fecha_inicio).toLocaleDateString('es-PE') : '—'}</td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{formatearFecha(c.fecha_inicio)}</td>
                   </tr>
                 ))}
               </tbody>
