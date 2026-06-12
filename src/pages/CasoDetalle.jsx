@@ -68,6 +68,16 @@ export default function CasoDetalle() {
     setSaving(false)
   }
 
+  // Helper: extrae la ruta interna del archivo, ya sea que venga como URL completa (docs viejos) o como path (docs nuevos)
+  function getStoragePath(urlOrPath) {
+    if (!urlOrPath) return null
+    if (urlOrPath.startsWith('http')) {
+      const match = urlOrPath.match(/\/documentos\/(.+?)(\?|$)/)
+      return match ? match[1] : null
+    }
+    return urlOrPath
+  }
+
   async function handleUploadDoc(e) {
     const file = e.target.files[0]
     if (!file) return
@@ -76,17 +86,38 @@ export default function CasoDetalle() {
     const path = `${id}/${Date.now()}.${ext}`
     const { error: uploadError } = await supabase.storage.from('documentos').upload(path, file)
     if (!uploadError) {
-      const { data: { publicUrl } } = supabase.storage.from('documentos').getPublicUrl(path)
-      await supabase.from('documentos').insert({ caso_id: id, nombre: file.name, url: publicUrl, subido_por: perfil.id, fecha_documento: new Date().toISOString().split('T')[0], tipo_documento: ext.toUpperCase() })
+      // Guardamos solo el path interno del archivo (no una URL pública, porque el bucket es privado)
+      await supabase.from('documentos').insert({ caso_id: id, nombre: file.name, url: path, subido_por: perfil.id, fecha_documento: new Date().toISOString().split('T')[0], tipo_documento: ext.toUpperCase() })
       loadAll()
+    } else {
+      alert('Error al subir el documento: ' + uploadError.message)
     }
+    // Limpiamos el input para permitir volver a subir el mismo archivo si hace falta
+    if (fileRef.current) fileRef.current.value = ''
     setUploadingFile(false)
+  }
+
+  async function handleViewDoc(doc) {
+    const path = getStoragePath(doc.url)
+    if (!path) {
+      alert('No se pudo determinar la ruta del documento.')
+      return
+    }
+    // Generamos un enlace firmado temporal (válido 1 hora) para acceder al archivo privado
+    const { data, error } = await supabase.storage.from('documentos').createSignedUrl(path, 3600)
+    if (error) {
+      alert('No se pudo abrir el documento: ' + error.message)
+      return
+    }
+    window.open(data.signedUrl, '_blank')
   }
 
   async function handleDeleteDoc(docId, url) {
     if (!confirm('¿Eliminar este documento?')) return
-    const path = url.split('/documentos/')[1]
-    await supabase.storage.from('documentos').remove([path])
+    const path = getStoragePath(url)
+    if (path) {
+      await supabase.storage.from('documentos').remove([path])
+    }
     await supabase.from('documentos').delete().eq('id', docId)
     loadAll()
   }
@@ -293,7 +324,7 @@ export default function CasoDetalle() {
                 <tbody>
                   {documentos.map(doc => (
                     <tr key={doc.id}>
-                      <td><a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--navy)', fontWeight: 500, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}><FileText size={14} />{doc.nombre}</a></td>
+                      <td><a onClick={() => handleViewDoc(doc)} style={{ color: 'var(--navy)', fontWeight: 500, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><FileText size={14} />{doc.nombre}</a></td>
                       <td><span style={{ background: 'var(--cream)', padding: '2px 8px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>{doc.tipo_documento || '—'}</span></td>
                       <td style={{ color: 'var(--text-secondary)' }}>{doc.perfiles?.nombre || '—'}</td>
                       <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{new Date(doc.fecha_documento).toLocaleDateString('es-PE')}</td>
