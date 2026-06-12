@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { mesActualEnLima, formatearFecha } from '../lib/dateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { Clock } from 'lucide-react'
 
@@ -10,7 +11,7 @@ export default function Horas() {
   const [horas, setHoras] = useState([])
   const [loading, setLoading] = useState(true)
   const [filtroAbogado, setFiltroAbogado] = useState(perfil?.rol !== 'socio_admin' ? perfil?.id : '')
-  const [filtroMes, setFiltroMes] = useState(new Date().toISOString().slice(0, 7))
+  const [filtroMes, setFiltroMes] = useState(mesActualEnLima())
   const [abogados, setAbogados] = useState([])
 
   useEffect(() => { loadData() }, [])
@@ -85,7 +86,7 @@ export default function Horas() {
               <tbody>
                 {filtered.map(h => (
                   <tr key={h.id}>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{new Date(h.fecha).toLocaleDateString('es-PE')}</td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{formatearFecha(h.fecha)}</td>
                     <td style={{ fontWeight: 500 }}>{h.perfiles?.nombre || '—'}</td>
                     <td style={{ fontSize: '0.8rem' }}>
                       {h.casos ? <span style={{ fontFamily: 'monospace', color: 'var(--navy)' }}>{h.casos.numero_expediente}</span> : '—'}
