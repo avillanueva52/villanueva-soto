@@ -32,6 +32,11 @@ export default function CasoDetalle() {
   const [estadoForm, setEstadoForm] = useState({ titulo: '', descripcion: '', fecha: hoyEnLima() })
   const [saving, setSaving] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
+  const [uploadQueue, setUploadQueue] = useState([])
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
+  const [editingDoc, setEditingDoc] = useState(null)
+  const [editDocForm, setEditDocForm] = useState({ nombre: '', fecha_documento: '', descripcion: '' })
   const fileRef = useRef()
 
   useEffect(() => { loadAll() }, [id])
@@ -80,23 +85,86 @@ export default function CasoDetalle() {
     return urlOrPath
   }
 
-  async function handleUploadDoc(e) {
-    const file = e.target.files[0]
-    if (!file) return
-    setUploadingFile(true)
-    const ext = file.name.split('.').pop()
-    const path = `${id}/${Date.now()}.${ext}`
-    const { error: uploadError } = await supabase.storage.from('documentos').upload(path, file)
-    if (!uploadError) {
-      // Guardamos solo el path interno del archivo (no una URL pública, porque el bucket es privado)
-      await supabase.from('documentos').insert({ caso_id: id, nombre: file.name, url: path, subido_por: perfil.id, fecha_documento: hoyEnLima(), tipo_documento: ext.toUpperCase() })
-      loadAll()
-    } else {
-      alert('Error al subir el documento: ' + uploadError.message)
-    }
-    // Limpiamos el input para permitir volver a subir el mismo archivo si hace falta
+  function handleSelectFiles(e) {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    // Preparamos la cola con nombre, fecha por defecto (hoy) y descripción vacía para cada archivo
+    const queue = files.map(file => ({
+      file,
+      nombre: file.name,
+      fecha_documento: hoyEnLima(),
+      descripcion: '',
+      tipo_documento: (file.name.split('.').pop() || '').toUpperCase()
+    }))
+    setUploadQueue(queue)
+    setShowUploadModal(true)
     if (fileRef.current) fileRef.current.value = ''
+  }
+
+  function updateQueueItem(index, field, value) {
+    setUploadQueue(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item))
+  }
+
+  function removeFromQueue(index) {
+    setUploadQueue(prev => prev.filter((_, i) => i !== index))
+  }
+
+  async function handleUploadAll() {
+    if (uploadQueue.length === 0) return
+    setUploadingFile(true)
+    setUploadProgress({ current: 0, total: uploadQueue.length })
+    let errores = []
+    for (let i = 0; i < uploadQueue.length; i++) {
+      const item = uploadQueue[i]
+      setUploadProgress({ current: i + 1, total: uploadQueue.length })
+      const ext = item.file.name.split('.').pop()
+      const path = `${id}/${Date.now()}_${i}.${ext}`
+      const { error: uploadError } = await supabase.storage.from('documentos').upload(path, item.file)
+      if (uploadError) {
+        errores.push(`${item.nombre}: ${uploadError.message}`)
+        continue
+      }
+      await supabase.from('documentos').insert({
+        caso_id: id,
+        nombre: item.nombre,
+        url: path,
+        subido_por: perfil.id,
+        fecha_documento: item.fecha_documento,
+        tipo_documento: item.tipo_documento,
+        descripcion: item.descripcion || null
+      })
+    }
     setUploadingFile(false)
+    setShowUploadModal(false)
+    setUploadQueue([])
+    setUploadProgress({ current: 0, total: 0 })
+    if (errores.length > 0) {
+      alert('Algunos documentos no se pudieron subir:\n\n' + errores.join('\n'))
+    }
+    loadAll()
+  }
+
+  function handleEditDoc(doc) {
+    setEditingDoc(doc)
+    setEditDocForm({
+      nombre: doc.nombre || '',
+      fecha_documento: doc.fecha_documento || hoyEnLima(),
+      descripcion: doc.descripcion || ''
+    })
+  }
+
+  async function handleSaveEditDoc(e) {
+    e.preventDefault()
+    setSaving(true)
+    await supabase.from('documentos').update({
+      nombre: editDocForm.nombre,
+      fecha_documento: editDocForm.fecha_documento,
+      descripcion: editDocForm.descripcion || null
+    }).eq('id', editingDoc.id)
+    setEditingDoc(null)
+    setEditDocForm({ nombre: '', fecha_documento: '', descripcion: '' })
+    loadAll()
+    setSaving(false)
   }
 
   async function handleViewDoc(doc) {
@@ -311,9 +379,9 @@ export default function CasoDetalle() {
           <div className="card-header">
             <div className="card-title">Documentos del Expediente</div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input type="file" ref={fileRef} style={{ display: 'none' }} onChange={handleUploadDoc} />
+              <input type="file" ref={fileRef} multiple style={{ display: 'none' }} onChange={handleSelectFiles} />
               <button className="btn btn-primary btn-sm" onClick={() => fileRef.current.click()} disabled={uploadingFile}>
-                <Upload size={14} />{uploadingFile ? 'Subiendo...' : 'Subir Documento'}
+                <Upload size={14} />Subir Documentos
               </button>
             </div>
           </div>
@@ -322,15 +390,23 @@ export default function CasoDetalle() {
           ) : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Nombre</th><th>Tipo</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead>
+                <thead><tr><th>Nombre</th><th>Tipo</th><th>Subido por</th><th>Fecha</th><th style={{ width: 90 }}></th></tr></thead>
                 <tbody>
                   {documentos.map(doc => (
                     <tr key={doc.id}>
-                      <td><a onClick={() => handleViewDoc(doc)} style={{ color: 'var(--navy)', fontWeight: 500, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><FileText size={14} />{doc.nombre}</a></td>
+                      <td>
+                        <a onClick={() => handleViewDoc(doc)} style={{ color: 'var(--navy)', fontWeight: 500, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><FileText size={14} />{doc.nombre}</a>
+                        {doc.descripcion && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3, paddingLeft: 20, whiteSpace: 'pre-wrap' }}>{doc.descripcion}</div>}
+                      </td>
                       <td><span style={{ background: 'var(--cream)', padding: '2px 8px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>{doc.tipo_documento || '—'}</span></td>
                       <td style={{ color: 'var(--text-secondary)' }}>{doc.perfiles?.nombre || '—'}</td>
                       <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{formatearFecha(doc.fecha_documento)}</td>
-                      <td><button className="btn-icon" onClick={() => handleDeleteDoc(doc.id, doc.url)} style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button></td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                          <button className="btn-icon" onClick={() => handleEditDoc(doc)} title="Editar documento"><Edit2 size={14} /></button>
+                          <button className="btn-icon" onClick={() => handleDeleteDoc(doc.id, doc.url)} style={{ color: 'var(--danger)' }} title="Eliminar documento"><Trash2 size={14} /></button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -453,6 +529,111 @@ export default function CasoDetalle() {
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setShowTareaModal(false)}>Cancelar</button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Guardando...' : 'Crear Tarea'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SUBIDA MÚLTIPLE */}
+      {showUploadModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !uploadingFile && setShowUploadModal(false)}>
+          <div className="modal modal-lg">
+            <div className="modal-header">
+              <div className="modal-title">Subir {uploadQueue.length} documento{uploadQueue.length !== 1 ? 's' : ''}</div>
+              {!uploadingFile && <button className="btn-icon" onClick={() => { setShowUploadModal(false); setUploadQueue([]) }}>✕</button>}
+            </div>
+            <div className="modal-body">
+              {uploadingFile ? (
+                <div style={{ textAlign: 'center', padding: 40 }}>
+                  <div className="spinner" style={{ margin: '0 auto 16px' }}></div>
+                  <div style={{ fontWeight: 600, fontSize: '1rem' }}>Subiendo {uploadProgress.current} de {uploadProgress.total}...</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4 }}>Por favor no cierres esta ventana</div>
+                  <div className="progress-bar" style={{ marginTop: 16, maxWidth: 300, marginLeft: 'auto', marginRight: 'auto' }}>
+                    <div className="progress-fill" style={{ width: `${uploadProgress.total > 0 ? (uploadProgress.current / uploadProgress.total * 100) : 0}%`, background: 'var(--navy)' }}></div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16 }}>
+                    Revisa el nombre, fecha y descripción de cada documento antes de subirlos.
+                  </div>
+                  {uploadQueue.map((item, idx) => (
+                    <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 14, marginBottom: 12, background: 'var(--cream)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          <FileText size={14} />
+                          <span style={{ fontFamily: 'monospace' }}>{item.file.name}</span>
+                          <span>({(item.file.size / 1024).toFixed(0)} KB)</span>
+                        </div>
+                        <button className="btn-icon" onClick={() => removeFromQueue(idx)} style={{ color: 'var(--danger)' }} title="Quitar de la lista"><Trash2 size={13} /></button>
+                      </div>
+                      <div className="form-grid">
+                        <div className="form-group" style={{ marginBottom: 8 }}>
+                          <label className="form-label">Nombre del documento *</label>
+                          <input className="form-input" value={item.nombre} onChange={e => updateQueueItem(idx, 'nombre', e.target.value)} required />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 8 }}>
+                          <label className="form-label">Fecha del documento *</label>
+                          <input className="form-input" type="date" value={item.fecha_documento} onChange={e => updateQueueItem(idx, 'fecha_documento', e.target.value)} required />
+                        </div>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Descripción / Notas</label>
+                        <textarea className="form-textarea" value={item.descripcion} onChange={e => updateQueueItem(idx, 'descripcion', e.target.value)} placeholder="Opcional: notas sobre el documento..." style={{ minHeight: 50 }} />
+                      </div>
+                    </div>
+                  ))}
+                  {uploadQueue.length === 0 && (
+                    <div className="empty-state"><FileText size={32} /><p>No quedan documentos en la lista</p></div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              {!uploadingFile && (
+                <>
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowUploadModal(false); setUploadQueue([]) }}>Cancelar</button>
+                  <button type="button" className="btn btn-primary" onClick={handleUploadAll} disabled={uploadQueue.length === 0}>
+                    <Upload size={14} />Subir {uploadQueue.length} documento{uploadQueue.length !== 1 ? 's' : ''}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR DOCUMENTO */}
+      {editingDoc && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setEditingDoc(null)}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Editar Documento</div>
+              <button className="btn-icon" onClick={() => setEditingDoc(null)}>✕</button>
+            </div>
+            <form onSubmit={handleSaveEditDoc}>
+              <div className="modal-body">
+                <div style={{ background: 'var(--cream)', padding: '10px 14px', borderRadius: 6, marginBottom: 16, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  <FileText size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+                  Archivo: <span style={{ fontFamily: 'monospace' }}>{editingDoc.tipo_documento}</span>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Nombre del documento *</label>
+                  <input className="form-input" value={editDocForm.nombre} onChange={e => setEditDocForm({ ...editDocForm, nombre: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Fecha del documento *</label>
+                  <input className="form-input" type="date" value={editDocForm.fecha_documento} onChange={e => setEditDocForm({ ...editDocForm, fecha_documento: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Descripción / Notas</label>
+                  <textarea className="form-textarea" value={editDocForm.descripcion} onChange={e => setEditDocForm({ ...editDocForm, descripcion: e.target.value })} placeholder="Información adicional del documento..." style={{ minHeight: 80 }} />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setEditingDoc(null)}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Guardando...' : 'Guardar Cambios'}</button>
               </div>
             </form>
           </div>
