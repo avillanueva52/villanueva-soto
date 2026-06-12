@@ -7,6 +7,20 @@ import { ArrowLeft, Upload, Plus, Trash2, FileText, Clock, CheckSquare, Edit2, S
 const TIPOS_TAREA = ['redaccion', 'investigacion', 'audiencia', 'reunion', 'tramite', 'consulta', 'revision', 'otro']
 const TIPOS_TAREA_LABELS = { redaccion: 'Redacción', investigacion: 'Investigación', audiencia: 'Audiencia', reunion: 'Reunión', tramite: 'Trámite', consulta: 'Consulta', revision: 'Revisión', otro: 'Otro' }
 
+// Devuelve la fecha de hoy en zona horaria de Lima (UTC-5) en formato YYYY-MM-DD. Evita el bug clásico de UTC que muestra un día atrás.
+function hoyEnLima() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
+// Formatea una fecha tipo 'YYYY-MM-DD' (proveniente de la base de datos) sin conversión UTC, evitando que se muestre el día anterior.
+function formatearFecha(fechaStr, opciones = {}) {
+  if (!fechaStr) return '—'
+  const partes = String(fechaStr).split('T')[0].split('-')
+  if (partes.length !== 3) return fechaStr
+  const fecha = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]))
+  return fecha.toLocaleDateString('es-PE', opciones)
+}
+
 export default function CasoDetalle() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -25,9 +39,9 @@ export default function CasoDetalle() {
   const [showEstadoModal, setShowEstadoModal] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
-  const [horaForm, setHoraForm] = useState({ tipo_tarea: 'redaccion', horas: '', descripcion: '', fecha: new Date().toISOString().split('T')[0] })
+  const [horaForm, setHoraForm] = useState({ tipo_tarea: 'redaccion', horas: '', descripcion: '', fecha: hoyEnLima() })
   const [tareaForm, setTareaForm] = useState({ titulo: '', descripcion: '', prioridad: 'media', asignado_a: '', fecha_vencimiento: '' })
-  const [estadoForm, setEstadoForm] = useState({ titulo: '', descripcion: '', fecha: new Date().toISOString().split('T')[0] })
+  const [estadoForm, setEstadoForm] = useState({ titulo: '', descripcion: '', fecha: hoyEnLima() })
   const [saving, setSaving] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const fileRef = useRef()
@@ -87,7 +101,7 @@ export default function CasoDetalle() {
     const { error: uploadError } = await supabase.storage.from('documentos').upload(path, file)
     if (!uploadError) {
       // Guardamos solo el path interno del archivo (no una URL pública, porque el bucket es privado)
-      await supabase.from('documentos').insert({ caso_id: id, nombre: file.name, url: path, subido_por: perfil.id, fecha_documento: new Date().toISOString().split('T')[0], tipo_documento: ext.toUpperCase() })
+      await supabase.from('documentos').insert({ caso_id: id, nombre: file.name, url: path, subido_por: perfil.id, fecha_documento: hoyEnLima(), tipo_documento: ext.toUpperCase() })
       loadAll()
     } else {
       alert('Error al subir el documento: ' + uploadError.message)
@@ -127,7 +141,7 @@ export default function CasoDetalle() {
     setSaving(true)
     await supabase.from('horas_trabajadas').insert({ ...horaForm, caso_id: id, perfil_id: perfil.id, horas: parseFloat(horaForm.horas) })
     setShowHorasModal(false)
-    setHoraForm({ tipo_tarea: 'redaccion', horas: '', descripcion: '', fecha: new Date().toISOString().split('T')[0] })
+    setHoraForm({ tipo_tarea: 'redaccion', horas: '', descripcion: '', fecha: hoyEnLima() })
     loadAll()
     setSaving(false)
   }
@@ -147,7 +161,7 @@ export default function CasoDetalle() {
     setSaving(true)
     await supabase.from('estados_procesales').insert({ ...estadoForm, caso_id: id, perfil_id: perfil.id })
     setShowEstadoModal(false)
-    setEstadoForm({ titulo: '', descripcion: '', fecha: new Date().toISOString().split('T')[0] })
+    setEstadoForm({ titulo: '', descripcion: '', fecha: hoyEnLima() })
     loadAll()
     setSaving(false)
   }
@@ -230,7 +244,7 @@ export default function CasoDetalle() {
               </div>
             ) : (
               <div>
-                {[['Cliente', caso.clientes?.nombre || '—'], ['Abogado Responsable', caso.perfiles?.nombre || '—'], ['Juzgado', caso.juzgado || '—'], ['N° Judicial', caso.numero_judicial || '—'], ['Fecha Inicio', caso.fecha_inicio ? new Date(caso.fecha_inicio).toLocaleDateString('es-PE') : '—'], ['Fecha Cierre', caso.fecha_cierre ? new Date(caso.fecha_cierre).toLocaleDateString('es-PE') : '—']].map(([label, value]) => (
+                {[['Cliente', caso.clientes?.nombre || '—'], ['Abogado Responsable', caso.perfiles?.nombre || '—'], ['Juzgado', caso.juzgado || '—'], ['N° Judicial', caso.numero_judicial || '—'], ['Fecha Inicio', formatearFecha(caso.fecha_inicio)], ['Fecha Cierre', formatearFecha(caso.fecha_cierre)]].map(([label, value]) => (
                   <div key={label} className="detail-field">
                     <div className="detail-label">{label}</div>
                     <div className="detail-value">{value}</div>
@@ -256,7 +270,7 @@ export default function CasoDetalle() {
               <div className="card">
                 <div className="card-title" style={{ marginBottom: 12 }}>Último Estado</div>
                 <div style={{ background: 'var(--navy)', borderRadius: 8, padding: '12px 14px', color: 'white' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--gold-light)', marginBottom: 4 }}>{new Date(estados[0].fecha).toLocaleDateString('es-PE')}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--gold-light)', marginBottom: 4 }}>{formatearFecha(estados[0].fecha)}</div>
                   <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{estados[0].titulo}</div>
                   {estados[0].descripcion && <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{estados[0].descripcion}</div>}
                 </div>
@@ -288,7 +302,7 @@ export default function CasoDetalle() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: '0.72rem', color: i === 0 ? 'var(--gold-light)' : 'var(--text-muted)', marginBottom: 3 }}>
-                          {new Date(e.fecha).toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                          {formatearFecha(e.fecha, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                           {e.perfiles?.nombre && ` · ${e.perfiles.nombre}`}
                         </div>
                         <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{e.titulo}</div>
@@ -327,7 +341,7 @@ export default function CasoDetalle() {
                       <td><a onClick={() => handleViewDoc(doc)} style={{ color: 'var(--navy)', fontWeight: 500, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><FileText size={14} />{doc.nombre}</a></td>
                       <td><span style={{ background: 'var(--cream)', padding: '2px 8px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>{doc.tipo_documento || '—'}</span></td>
                       <td style={{ color: 'var(--text-secondary)' }}>{doc.perfiles?.nombre || '—'}</td>
-                      <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{new Date(doc.fecha_documento).toLocaleDateString('es-PE')}</td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{formatearFecha(doc.fecha_documento)}</td>
                       <td><button className="btn-icon" onClick={() => handleDeleteDoc(doc.id, doc.url)} style={{ color: 'var(--danger)' }}><Trash2 size={14} /></button></td>
                     </tr>
                   ))}
@@ -355,7 +369,7 @@ export default function CasoDetalle() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 500, fontSize: '0.875rem' }}>{TIPOS_TAREA_LABELS[h.tipo_tarea] || h.tipo_tarea}</div>
                 {h.descripcion && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>{h.descripcion}</div>}
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3 }}>{h.perfiles?.nombre} · {new Date(h.fecha).toLocaleDateString('es-PE')}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3 }}>{h.perfiles?.nombre} · {formatearFecha(h.fecha)}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <span style={{ fontSize: '0.72rem', background: h.facturado ? 'var(--success-bg)' : 'var(--cream)', color: h.facturado ? 'var(--success)' : 'var(--text-muted)', padding: '2px 8px', borderRadius: 4 }}>{h.facturado ? 'Facturado' : 'Pendiente'}</span>
@@ -382,7 +396,7 @@ export default function CasoDetalle() {
                 <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                   <span className={`badge badge-${t.prioridad}`}>{t.prioridad}</span>
                   {t.perfiles?.nombre && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>→ {t.perfiles.nombre}</span>}
-                  {t.fecha_vencimiento && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Vence: {new Date(t.fecha_vencimiento).toLocaleDateString('es-PE')}</span>}
+                  {t.fecha_vencimiento && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Vence: {formatearFecha(t.fecha_vencimiento)}</span>}
                 </div>
               </div>
             </div>
