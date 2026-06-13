@@ -20,7 +20,7 @@ export default function Casos() {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('activo')
   const [filtroAbogado, setFiltroAbogado] = useState('')
-  const [form, setForm] = useState({ numero_expediente: '', titulo: '', tipo: 'civil', estado: 'activo', cliente_id: '', abogado_responsable_id: '', juzgado: '', numero_judicial: '', descripcion: '', fecha_inicio: hoyEnLima() })
+  const [form, setForm] = useState({ numero_expediente: '', titulo: '', tipo: 'civil', estado: 'activo', cliente_id: '', abogado_responsable_id: '', juzgado: '', primer_numero_judicial: '', descripcion: '', fecha_inicio: hoyEnLima() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -42,11 +42,26 @@ export default function Casos() {
     e.preventDefault()
     setSaving(true)
     setError('')
-    const payload = { ...form, cliente_id: form.cliente_id || null, abogado_responsable_id: form.abogado_responsable_id || null }
-    const { error } = await supabase.from('casos').insert(payload)
-    if (error) { setError(error.message); setSaving(false); return }
+    // Extraemos el primer número judicial del form para guardarlo en la tabla nueva
+    const { primer_numero_judicial, ...payload } = {
+      ...form,
+      cliente_id: form.cliente_id || null,
+      abogado_responsable_id: form.abogado_responsable_id || null
+    }
+    const { data: nuevoCaso, error: errorCaso } = await supabase.from('casos').insert(payload).select().single()
+    if (errorCaso) { setError(errorCaso.message); setSaving(false); return }
+
+    // Si el usuario ingresó un primer número de expediente judicial, lo guardamos en la nueva tabla
+    if (primer_numero_judicial && primer_numero_judicial.trim()) {
+      await supabase.from('numeros_expediente').insert({
+        caso_id: nuevoCaso.id,
+        etapa: 'Primera Instancia',
+        numero: primer_numero_judicial.trim()
+      })
+    }
+
     setShowModal(false)
-    setForm({ numero_expediente: '', titulo: '', tipo: 'civil', estado: 'activo', cliente_id: '', abogado_responsable_id: '', juzgado: '', numero_judicial: '', descripcion: '', fecha_inicio: hoyEnLima() })
+    setForm({ numero_expediente: '', titulo: '', tipo: 'civil', estado: 'activo', cliente_id: '', abogado_responsable_id: '', juzgado: '', primer_numero_judicial: '', descripcion: '', fecha_inicio: hoyEnLima() })
     loadData()
     setSaving(false)
   }
@@ -137,9 +152,12 @@ export default function Casos() {
             <form onSubmit={handleSave}>
               <div className="modal-body">
                 {error && <div className="alert alert-error">{error}</div>}
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Llena los datos esenciales. Los campos específicos del tipo de caso (partes procesales, datos fiscales, etc.) se completan después en el detalle del expediente.
+                </div>
                 <div className="form-grid">
                   <div className="form-group">
-                    <label className="form-label">N° Expediente *</label>
+                    <label className="form-label">N° Expediente interno *</label>
                     <input className="form-input" value={form.numero_expediente} onChange={e => setForm({ ...form, numero_expediente: e.target.value })} placeholder="Ej: EXP-2024-001" required />
                   </div>
                   <div className="form-group">
@@ -175,8 +193,8 @@ export default function Casos() {
                     <input className="form-input" value={form.juzgado} onChange={e => setForm({ ...form, juzgado: e.target.value })} placeholder="Ej: 3er Juzgado Civil de Lima" />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">N° Judicial</label>
-                    <input className="form-input" value={form.numero_judicial} onChange={e => setForm({ ...form, numero_judicial: e.target.value })} placeholder="Número del proceso judicial" />
+                    <label className="form-label">N° Expediente Judicial (Primera Instancia)</label>
+                    <input className="form-input" value={form.primer_numero_judicial} onChange={e => setForm({ ...form, primer_numero_judicial: e.target.value })} placeholder="Opcional, se pueden agregar más números después" />
                   </div>
                 </div>
                 <div className="form-grid">
@@ -192,8 +210,8 @@ export default function Casos() {
                   </div>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Descripción / Notas</label>
-                  <textarea className="form-textarea" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Detalles adicionales del caso..." />
+                  <label className="form-label">Descripción / Notas iniciales</label>
+                  <textarea className="form-textarea" value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Resumen breve del caso..." />
                 </div>
               </div>
               <div className="modal-footer">
