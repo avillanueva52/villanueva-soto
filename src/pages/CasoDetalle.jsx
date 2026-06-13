@@ -48,7 +48,8 @@ export default function CasoDetalle() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
   const [editingDoc, setEditingDoc] = useState(null)
-  const [editDocForm, setEditDocForm] = useState({ nombre: '', fecha_documento: '', descripcion: '' })
+  const [editDocForm, setEditDocForm] = useState({ nombre: '', fecha_documento: '', descripcion: '', carpeta: '' })
+  const [subTabDoc, setSubTabDoc] = useState('todos')
   const fileRef = useRef()
 
   useEffect(() => { loadAll() }, [id])
@@ -152,6 +153,7 @@ export default function CasoDetalle() {
       nombre: file.name,
       fecha_documento: hoyEnLima(),
       descripcion: '',
+      carpeta: '',
       tipo_documento: (file.name.split('.').pop() || '').toUpperCase()
     }))
     setUploadQueue(queue)
@@ -189,7 +191,8 @@ export default function CasoDetalle() {
         subido_por: perfil.id,
         fecha_documento: item.fecha_documento,
         tipo_documento: item.tipo_documento,
-        descripcion: item.descripcion || null
+        descripcion: item.descripcion || null,
+        carpeta: item.carpeta?.trim() || null
       })
     }
     setUploadingFile(false)
@@ -207,7 +210,8 @@ export default function CasoDetalle() {
     setEditDocForm({
       nombre: doc.nombre || '',
       fecha_documento: doc.fecha_documento || hoyEnLima(),
-      descripcion: doc.descripcion || ''
+      descripcion: doc.descripcion || '',
+      carpeta: doc.carpeta || ''
     })
   }
 
@@ -217,10 +221,11 @@ export default function CasoDetalle() {
     await supabase.from('documentos').update({
       nombre: editDocForm.nombre,
       fecha_documento: editDocForm.fecha_documento,
-      descripcion: editDocForm.descripcion || null
+      descripcion: editDocForm.descripcion || null,
+      carpeta: editDocForm.carpeta?.trim() || null
     }).eq('id', editingDoc.id)
     setEditingDoc(null)
-    setEditDocForm({ nombre: '', fecha_documento: '', descripcion: '' })
+    setEditDocForm({ nombre: '', fecha_documento: '', descripcion: '', carpeta: '' })
     loadAll()
     setSaving(false)
   }
@@ -595,47 +600,100 @@ export default function CasoDetalle() {
         </div>
       )}
 
-      {tab === 'documentos' && (
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Documentos del Expediente</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input type="file" ref={fileRef} multiple style={{ display: 'none' }} onChange={handleSelectFiles} />
-              <button className="btn btn-primary btn-sm" onClick={() => fileRef.current.click()} disabled={uploadingFile}>
-                <Upload size={14} />Subir Documentos
-              </button>
+      {tab === 'documentos' && (() => {
+        // Calculamos las carpetas únicas del caso y los documentos filtrados según la sub-pestaña activa
+        const carpetasDocs = [...new Set(documentos.map(d => d.carpeta).filter(Boolean))].sort()
+        const tieneSinCarpeta = documentos.some(d => !d.carpeta)
+        const hayCarpetas = carpetasDocs.length > 0
+        const documentosFiltrados = subTabDoc === 'todos'
+          ? documentos
+          : subTabDoc === '__sin_carpeta__'
+            ? documentos.filter(d => !d.carpeta)
+            : documentos.filter(d => d.carpeta === subTabDoc)
+
+        return (
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">Documentos del Expediente</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input type="file" ref={fileRef} multiple style={{ display: 'none' }} onChange={handleSelectFiles} />
+                <button className="btn btn-primary btn-sm" onClick={() => fileRef.current.click()} disabled={uploadingFile}>
+                  <Upload size={14} />Subir Documentos
+                </button>
+              </div>
             </div>
+
+            {/* Sub-pestañas de carpetas (solo si hay al menos una carpeta) */}
+            {hayCarpetas && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid var(--border-light)' }}>
+                <button
+                  className={`btn btn-sm ${subTabDoc === 'todos' ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setSubTabDoc('todos')}
+                  style={{ fontSize: '0.78rem' }}
+                >
+                  Todos ({documentos.length})
+                </button>
+                {carpetasDocs.map(c => (
+                  <button
+                    key={c}
+                    className={`btn btn-sm ${subTabDoc === c ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setSubTabDoc(c)}
+                    style={{ fontSize: '0.78rem' }}
+                  >
+                    {c} ({documentos.filter(d => d.carpeta === c).length})
+                  </button>
+                ))}
+                {tieneSinCarpeta && (
+                  <button
+                    className={`btn btn-sm ${subTabDoc === '__sin_carpeta__' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setSubTabDoc('__sin_carpeta__')}
+                    style={{ fontSize: '0.78rem' }}
+                  >
+                    Sin carpeta ({documentos.filter(d => !d.carpeta).length})
+                  </button>
+                )}
+              </div>
+            )}
+
+            {documentos.length === 0 ? (
+              <div className="empty-state"><FileText size={36} /><p>No hay documentos subidos aún</p></div>
+            ) : documentosFiltrados.length === 0 ? (
+              <div className="empty-state"><FileText size={36} /><p>No hay documentos en esta carpeta</p></div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Nombre</th><th>Tipo</th><th>Subido por</th><th>Fecha</th><th style={{ width: 90 }}></th></tr></thead>
+                  <tbody>
+                    {documentosFiltrados.map(doc => (
+                      <tr key={doc.id}>
+                        <td>
+                          <a onClick={() => handleViewDoc(doc)} style={{ color: 'var(--navy)', fontWeight: 500, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><FileText size={14} />{doc.nombre}</a>
+                          {/* En la vista "Todos" mostramos un badge con la carpeta para no perder el contexto */}
+                          {subTabDoc === 'todos' && doc.carpeta && (
+                            <div style={{ marginTop: 4, paddingLeft: 20 }}>
+                              <span style={{ fontSize: '0.7rem', background: 'var(--gold-light)', color: 'var(--navy)', padding: '1px 8px', borderRadius: 4, fontWeight: 600 }}>📁 {doc.carpeta}</span>
+                            </div>
+                          )}
+                          {doc.descripcion && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3, paddingLeft: 20, whiteSpace: 'pre-wrap' }}>{doc.descripcion}</div>}
+                        </td>
+                        <td><span style={{ background: 'var(--cream)', padding: '2px 8px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>{doc.tipo_documento || '—'}</span></td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{doc.perfiles?.nombre || '—'}</td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{formatearFecha(doc.fecha_documento)}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                            <button className="btn-icon" onClick={() => handleEditDoc(doc)} title="Editar documento"><Edit2 size={14} /></button>
+                            <button className="btn-icon" onClick={() => handleDeleteDoc(doc.id, doc.url)} style={{ color: 'var(--danger)' }} title="Eliminar documento"><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-          {documentos.length === 0 ? (
-            <div className="empty-state"><FileText size={36} /><p>No hay documentos subidos aún</p></div>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Nombre</th><th>Tipo</th><th>Subido por</th><th>Fecha</th><th style={{ width: 90 }}></th></tr></thead>
-                <tbody>
-                  {documentos.map(doc => (
-                    <tr key={doc.id}>
-                      <td>
-                        <a onClick={() => handleViewDoc(doc)} style={{ color: 'var(--navy)', fontWeight: 500, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><FileText size={14} />{doc.nombre}</a>
-                        {doc.descripcion && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3, paddingLeft: 20, whiteSpace: 'pre-wrap' }}>{doc.descripcion}</div>}
-                      </td>
-                      <td><span style={{ background: 'var(--cream)', padding: '2px 8px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600 }}>{doc.tipo_documento || '—'}</span></td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{doc.perfiles?.nombre || '—'}</td>
-                      <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{formatearFecha(doc.fecha_documento)}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                          <button className="btn-icon" onClick={() => handleEditDoc(doc)} title="Editar documento"><Edit2 size={14} /></button>
-                          <button className="btn-icon" onClick={() => handleDeleteDoc(doc.id, doc.url)} style={{ color: 'var(--danger)' }} title="Eliminar documento"><Trash2 size={14} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+        )
+      })()}
 
       {tab === 'horas' && (
         <div className="card">
@@ -799,6 +857,19 @@ export default function CasoDetalle() {
                           <input className="form-input" type="date" value={item.fecha_documento} onChange={e => updateQueueItem(idx, 'fecha_documento', e.target.value)} required />
                         </div>
                       </div>
+                      <div className="form-group" style={{ marginBottom: 8 }}>
+                        <label className="form-label">Carpeta</label>
+                        <input
+                          className="form-input"
+                          list={`carpetas-existentes-${idx}`}
+                          value={item.carpeta}
+                          onChange={e => updateQueueItem(idx, 'carpeta', e.target.value)}
+                          placeholder="Opcional: ej. Principal, Cautelar, Cuaderno de Apelación..."
+                        />
+                        <datalist id={`carpetas-existentes-${idx}`}>
+                          {[...new Set(documentos.map(d => d.carpeta).filter(Boolean))].map(c => <option key={c} value={c} />)}
+                        </datalist>
+                      </div>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">Descripción / Notas</label>
                         <textarea className="form-textarea" value={item.descripcion} onChange={e => updateQueueItem(idx, 'descripcion', e.target.value)} placeholder="Opcional: notas sobre el documento..." style={{ minHeight: 50 }} />
@@ -846,6 +917,19 @@ export default function CasoDetalle() {
                 <div className="form-group">
                   <label className="form-label">Fecha del documento *</label>
                   <input className="form-input" type="date" value={editDocForm.fecha_documento} onChange={e => setEditDocForm({ ...editDocForm, fecha_documento: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Carpeta</label>
+                  <input
+                    className="form-input"
+                    list="carpetas-existentes-edit"
+                    value={editDocForm.carpeta}
+                    onChange={e => setEditDocForm({ ...editDocForm, carpeta: e.target.value })}
+                    placeholder="Opcional: ej. Principal, Cautelar, Cuaderno de Apelación..."
+                  />
+                  <datalist id="carpetas-existentes-edit">
+                    {[...new Set(documentos.map(d => d.carpeta).filter(Boolean))].map(c => <option key={c} value={c} />)}
+                  </datalist>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Descripción / Notas</label>
