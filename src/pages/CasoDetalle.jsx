@@ -8,6 +8,15 @@ import { ArrowLeft, Upload, Plus, Trash2, FileText, Clock, CheckSquare, Edit2, S
 const TIPOS_TAREA = ['redaccion', 'investigacion', 'audiencia', 'reunion', 'tramite', 'consulta', 'revision', 'otro']
 const TIPOS_TAREA_LABELS = { redaccion: 'Redacción', investigacion: 'Investigación', audiencia: 'Audiencia', reunion: 'Reunión', tramite: 'Trámite', consulta: 'Consulta', revision: 'Revisión', otro: 'Otro' }
 
+// Etapas procesales por tipo de caso (basadas en el sistema procesal peruano)
+const ETAPAS_POR_TIPO = {
+  penal: ['En Sede Policial', 'Diligencias preliminares', 'Investigación preparatoria', 'Etapa intermedia', 'Juicio oral', 'Sentencia', 'Apelación', 'Casación', 'Ejecución de sentencia', 'Archivado'],
+  civil: ['Postulación / Demanda', 'Saneamiento procesal', 'Audiencia de pruebas', 'Sentencia (1ra instancia)', 'Apelación', 'Sentencia (2da instancia)', 'Casación', 'Ejecución de sentencia'],
+  laboral: ['Demanda', 'Audiencia de conciliación', 'Audiencia de juzgamiento', 'Sentencia', 'Apelación', 'Casación', 'Ejecución'],
+  constitucional: ['Admisión', 'Audiencia única', 'Sentencia (1ra instancia)', 'Apelación', 'Vista de causa TC', 'Sentencia TC'],
+  administrativo: ['Demanda', 'Saneamiento', 'Audiencia', 'Sentencia', 'Apelación', 'Casación'],
+  consulta: ['En análisis', 'Informe emitido', 'Concluida']
+}
 
 export default function CasoDetalle() {
   const { id } = useParams()
@@ -20,6 +29,7 @@ export default function CasoDetalle() {
   const [estados, setEstados] = useState([])
   const [abogados, setAbogados] = useState([])
   const [clientes, setClientes] = useState([])
+  const [numerosExpediente, setNumerosExpediente] = useState([])
   const [tab, setTab] = useState('info')
   const [loading, setLoading] = useState(true)
   const [showHorasModal, setShowHorasModal] = useState(false)
@@ -30,6 +40,8 @@ export default function CasoDetalle() {
   const [horaForm, setHoraForm] = useState({ tipo_tarea: 'redaccion', horas: '', descripcion: '', fecha: hoyEnLima() })
   const [tareaForm, setTareaForm] = useState({ titulo: '', descripcion: '', prioridad: 'media', asignado_a: '', fecha_vencimiento: '' })
   const [estadoForm, setEstadoForm] = useState({ titulo: '', descripcion: '', fecha: hoyEnLima() })
+  const [nuevoNumero, setNuevoNumero] = useState({ etapa: '', etapaCustom: '', numero: '' })
+  const [etapaCustomEdit, setEtapaCustomEdit] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const [uploadQueue, setUploadQueue] = useState([])
@@ -42,14 +54,15 @@ export default function CasoDetalle() {
   useEffect(() => { loadAll() }, [id])
 
   async function loadAll() {
-    const [casoRes, docsRes, horasRes, tareasRes, estadosRes, abogadosRes, clientesRes] = await Promise.all([
+    const [casoRes, docsRes, horasRes, tareasRes, estadosRes, abogadosRes, clientesRes, numerosRes] = await Promise.all([
       supabase.from('casos').select('*, clientes(id,nombre), perfiles(id,nombre)').eq('id', id).single(),
       supabase.from('documentos').select('*, perfiles(nombre)').eq('caso_id', id).order('fecha_documento', { ascending: false }),
       supabase.from('horas_trabajadas').select('*, perfiles(nombre,rol)').eq('caso_id', id).order('fecha', { ascending: false }),
       supabase.from('tareas').select('*, perfiles!tareas_asignado_a_fkey(nombre)').eq('caso_id', id).order('creado_en', { ascending: false }),
       supabase.from('estados_procesales').select('*, perfiles(nombre)').eq('caso_id', id).order('fecha', { ascending: false }),
       supabase.from('perfiles').select('id,nombre,rol').eq('activo', true).order('nombre'),
-      supabase.from('clientes').select('id,nombre').order('nombre')
+      supabase.from('clientes').select('id,nombre').order('nombre'),
+      supabase.from('numeros_expediente').select('*').eq('caso_id', id).order('creado_en', { ascending: true })
     ])
     setCaso(casoRes.data)
     setEditForm(casoRes.data || {})
@@ -59,23 +72,69 @@ export default function CasoDetalle() {
     setEstados(estadosRes.data || [])
     setAbogados(abogadosRes.data || [])
     setClientes(clientesRes.data || [])
+    setNumerosExpediente(numerosRes.data || [])
     setLoading(false)
   }
 
   async function handleSaveEdit() {
     setSaving(true)
     await supabase.from('casos').update({
-      titulo: editForm.titulo, tipo: editForm.tipo, estado: editForm.estado,
-      cliente_id: editForm.cliente_id || null, abogado_responsable_id: editForm.abogado_responsable_id || null,
-      juzgado: editForm.juzgado, numero_judicial: editForm.numero_judicial,
-      descripcion: editForm.descripcion, fecha_inicio: editForm.fecha_inicio, fecha_cierre: editForm.fecha_cierre || null
+      titulo: editForm.titulo,
+      tipo: editForm.tipo,
+      estado: editForm.estado,
+      cliente_id: editForm.cliente_id || null,
+      abogado_responsable_id: editForm.abogado_responsable_id || null,
+      juzgado: editForm.juzgado,
+      juez_nombre: editForm.juez_nombre,
+      descripcion: editForm.descripcion,
+      notas_observaciones: editForm.notas_observaciones,
+      fecha_inicio: editForm.fecha_inicio,
+      fecha_cierre: editForm.fecha_cierre || null,
+      etapa_procesal: editForm.etapa_procesal,
+      // Campos específicos para penal
+      delitos: editForm.delitos,
+      carpeta_fiscal: editForm.carpeta_fiscal,
+      fiscalia: editForm.fiscalia,
+      fiscal_nombre: editForm.fiscal_nombre,
+      procesados: editForm.procesados,
+      agraviados: editForm.agraviados,
+      terceros: editForm.terceros,
+      // Campos específicos para no penal
+      demandante: editForm.demandante,
+      demandado: editForm.demandado
     }).eq('id', id)
     setEditing(false)
+    setEtapaCustomEdit(false)
     loadAll()
     setSaving(false)
   }
 
-  // Helper: extrae la ruta interna del archivo, ya sea que venga como URL completa (docs viejos) o como path (docs nuevos)
+  function cancelarEdicion() {
+    setEditForm(caso || {})
+    setEditing(false)
+    setEtapaCustomEdit(false)
+  }
+
+  async function handleAgregarNumero(e) {
+    e.preventDefault()
+    const etapaFinal = nuevoNumero.etapa === '__custom__' ? nuevoNumero.etapaCustom : nuevoNumero.etapa
+    if (!etapaFinal || !etapaFinal.trim() || !nuevoNumero.numero.trim()) return
+    await supabase.from('numeros_expediente').insert({
+      caso_id: id,
+      etapa: etapaFinal.trim(),
+      numero: nuevoNumero.numero.trim()
+    })
+    setNuevoNumero({ etapa: '', etapaCustom: '', numero: '' })
+    loadAll()
+  }
+
+  async function handleEliminarNumero(numeroId) {
+    if (!confirm('¿Eliminar este número de expediente?')) return
+    await supabase.from('numeros_expediente').delete().eq('id', numeroId)
+    loadAll()
+  }
+
+  // Helper: extrae la ruta interna del archivo
   function getStoragePath(urlOrPath) {
     if (!urlOrPath) return null
     if (urlOrPath.startsWith('http')) {
@@ -88,7 +147,6 @@ export default function CasoDetalle() {
   function handleSelectFiles(e) {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
-    // Preparamos la cola con nombre, fecha por defecto (hoy) y descripción vacía para cada archivo
     const queue = files.map(file => ({
       file,
       nombre: file.name,
@@ -173,7 +231,6 @@ export default function CasoDetalle() {
       alert('No se pudo determinar la ruta del documento.')
       return
     }
-    // Generamos un enlace firmado temporal (válido 1 hora). download: false permite previsualizar PDFs e imágenes en el navegador en vez de descargarlos directamente
     const { data, error } = await supabase.storage.from('documentos').createSignedUrl(path, 3600, { download: false })
     if (error) {
       alert('No se pudo abrir el documento: ' + error.message)
@@ -235,9 +292,20 @@ export default function CasoDetalle() {
   }
 
   const totalHoras = horas.reduce((s, h) => s + h.horas, 0)
+  const esPenal = caso?.tipo === 'penal'
+  const etapasDisponibles = caso ? (ETAPAS_POR_TIPO[caso.tipo] || []) : []
+  const etapaEsCustom = caso && caso.etapa_procesal && !etapasDisponibles.includes(caso.etapa_procesal)
 
   if (loading) return <div className="loading-page"><div className="spinner"></div></div>
   if (!caso) return <div style={{ padding: 40, textAlign: 'center' }}>Expediente no encontrado</div>
+
+  // Componente reutilizable para mostrar un campo (texto o textarea)
+  const Campo = ({ label, value, multilinea = false }) => (
+    <div className="detail-field">
+      <div className="detail-label">{label}</div>
+      <div className="detail-value" style={multilinea ? { whiteSpace: 'pre-wrap' } : {}}>{value || '—'}</div>
+    </div>
+  )
 
   return (
     <div>
@@ -245,10 +313,11 @@ export default function CasoDetalle() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button className="btn-icon" onClick={() => navigate('/casos')}><ArrowLeft size={16} /></button>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div className="page-title" style={{ fontSize: '1.2rem' }}>{caso.titulo}</div>
               <span className={`badge badge-${caso.tipo}`} style={{ textTransform: 'capitalize' }}>{caso.tipo}</span>
               <span className={`badge badge-${caso.estado}`} style={{ textTransform: 'capitalize' }}>{caso.estado}</span>
+              {caso.etapa_procesal && <span style={{ fontSize: '0.72rem', background: 'var(--gold-light)', color: 'var(--navy)', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>{caso.etapa_procesal}</span>}
             </div>
             <div className="page-subtitle" style={{ fontFamily: 'monospace' }}>{caso.numero_expediente}</div>
           </div>
@@ -257,7 +326,7 @@ export default function CasoDetalle() {
           <button className="btn btn-outline btn-sm" onClick={() => setEditing(true)}><Edit2 size={14} />Editar</button>
         ) : (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-outline btn-sm" onClick={() => setEditing(false)}><X size={14} />Cancelar</button>
+            <button className="btn btn-outline btn-sm" onClick={cancelarEdicion}><X size={14} />Cancelar</button>
             <button className="btn btn-primary btn-sm" onClick={handleSaveEdit} disabled={saving}><Save size={14} />{saving ? 'Guardando...' : 'Guardar'}</button>
           </div>
         )}
@@ -277,39 +346,191 @@ export default function CasoDetalle() {
 
       {tab === 'info' && (
         <div className="detail-grid">
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 16 }}>Datos del Expediente</div>
-            {editing ? (
-              <div>
-                <div className="form-group"><label className="form-label">Título</label><input className="form-input" value={editForm.titulo || ''} onChange={e => setEditForm({ ...editForm, titulo: e.target.value })} /></div>
-                <div className="form-grid">
-                  <div className="form-group"><label className="form-label">Tipo</label><select className="form-select" value={editForm.tipo || ''} onChange={e => setEditForm({ ...editForm, tipo: e.target.value })}>{['civil','penal','constitucional','laboral','administrativo','consulta'].map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}</select></div>
-                  <div className="form-group"><label className="form-label">Estado</label><select className="form-select" value={editForm.estado || ''} onChange={e => setEditForm({ ...editForm, estado: e.target.value })}>{['activo','archivado','cerrado','suspendido'].map(e => <option key={e} value={e}>{e.charAt(0).toUpperCase()+e.slice(1)}</option>)}</select></div>
-                </div>
-                <div className="form-group"><label className="form-label">Cliente</label><select className="form-select" value={editForm.cliente_id || ''} onChange={e => setEditForm({ ...editForm, cliente_id: e.target.value })}><option value="">Sin cliente</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
-                <div className="form-group"><label className="form-label">Abogado Responsable</label><select className="form-select" value={editForm.abogado_responsable_id || ''} onChange={e => setEditForm({ ...editForm, abogado_responsable_id: e.target.value })}><option value="">Sin asignar</option>{abogados.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></div>
-                <div className="form-grid">
-                  <div className="form-group"><label className="form-label">Juzgado</label><input className="form-input" value={editForm.juzgado || ''} onChange={e => setEditForm({ ...editForm, juzgado: e.target.value })} /></div>
-                  <div className="form-group"><label className="form-label">N° Judicial</label><input className="form-input" value={editForm.numero_judicial || ''} onChange={e => setEditForm({ ...editForm, numero_judicial: e.target.value })} /></div>
-                </div>
-                <div className="form-grid">
-                  <div className="form-group"><label className="form-label">Fecha Inicio</label><input className="form-input" type="date" value={editForm.fecha_inicio || ''} onChange={e => setEditForm({ ...editForm, fecha_inicio: e.target.value })} /></div>
-                  <div className="form-group"><label className="form-label">Fecha Cierre</label><input className="form-input" type="date" value={editForm.fecha_cierre || ''} onChange={e => setEditForm({ ...editForm, fecha_cierre: e.target.value })} /></div>
-                </div>
-                <div className="form-group"><label className="form-label">Descripción</label><textarea className="form-textarea" value={editForm.descripcion || ''} onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} /></div>
-              </div>
-            ) : (
-              <div>
-                {[['Cliente', caso.clientes?.nombre || '—'], ['Abogado Responsable', caso.perfiles?.nombre || '—'], ['Juzgado', caso.juzgado || '—'], ['N° Judicial', caso.numero_judicial || '—'], ['Fecha Inicio', formatearFecha(caso.fecha_inicio)], ['Fecha Cierre', formatearFecha(caso.fecha_cierre)]].map(([label, value]) => (
-                  <div key={label} className="detail-field">
-                    <div className="detail-label">{label}</div>
-                    <div className="detail-value">{value}</div>
+          {/* COLUMNA IZQUIERDA: secciones de información */}
+          <div>
+            {/* SECCIÓN: DATOS GENERALES */}
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title" style={{ marginBottom: 16 }}>Datos Generales</div>
+              {editing ? (
+                <div>
+                  <div className="form-group"><label className="form-label">Título</label><input className="form-input" value={editForm.titulo || ''} onChange={e => setEditForm({ ...editForm, titulo: e.target.value })} /></div>
+                  <div className="form-grid">
+                    <div className="form-group"><label className="form-label">Tipo</label><select className="form-select" value={editForm.tipo || ''} onChange={e => setEditForm({ ...editForm, tipo: e.target.value })}>{['civil','penal','constitucional','laboral','administrativo','consulta'].map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}</select></div>
+                    <div className="form-group"><label className="form-label">Estado</label><select className="form-select" value={editForm.estado || ''} onChange={e => setEditForm({ ...editForm, estado: e.target.value })}>{['activo','archivado','cerrado','suspendido'].map(e => <option key={e} value={e}>{e.charAt(0).toUpperCase()+e.slice(1)}</option>)}</select></div>
                   </div>
-                ))}
-                {caso.descripcion && <div className="detail-field"><div className="detail-label">Descripción</div><div className="detail-value" style={{ whiteSpace: 'pre-wrap' }}>{caso.descripcion}</div></div>}
+                  <div className="form-group"><label className="form-label">Cliente</label><select className="form-select" value={editForm.cliente_id || ''} onChange={e => setEditForm({ ...editForm, cliente_id: e.target.value })}><option value="">Sin cliente</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Abogado Responsable</label><select className="form-select" value={editForm.abogado_responsable_id || ''} onChange={e => setEditForm({ ...editForm, abogado_responsable_id: e.target.value })}><option value="">Sin asignar</option>{abogados.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></div>
+                  <div className="form-group">
+                    <label className="form-label">Etapa Procesal</label>
+                    {!etapaCustomEdit && etapasDisponibles.length > 0 ? (
+                      <select className="form-select" value={editForm.etapa_procesal || ''} onChange={e => {
+                        if (e.target.value === '__custom__') {
+                          setEtapaCustomEdit(true)
+                          setEditForm({ ...editForm, etapa_procesal: '' })
+                        } else {
+                          setEditForm({ ...editForm, etapa_procesal: e.target.value })
+                        }
+                      }}>
+                        <option value="">Sin etapa</option>
+                        {etapasDisponibles.map(et => <option key={et} value={et}>{et}</option>)}
+                        {etapaEsCustom && <option value={editForm.etapa_procesal}>{editForm.etapa_procesal} (personalizada)</option>}
+                        <option value="__custom__">+ Escribir etapa personalizada</option>
+                      </select>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input className="form-input" value={editForm.etapa_procesal || ''} onChange={e => setEditForm({ ...editForm, etapa_procesal: e.target.value })} placeholder="Escribir etapa..." style={{ flex: 1 }} />
+                        <button type="button" className="btn btn-outline btn-sm" onClick={() => { setEtapaCustomEdit(false); setEditForm({ ...editForm, etapa_procesal: '' }) }}><X size={14} /></button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="form-grid">
+                    <div className="form-group"><label className="form-label">Juzgado</label><input className="form-input" value={editForm.juzgado || ''} onChange={e => setEditForm({ ...editForm, juzgado: e.target.value })} /></div>
+                    <div className="form-group"><label className="form-label">Nombre del Juez</label><input className="form-input" value={editForm.juez_nombre || ''} onChange={e => setEditForm({ ...editForm, juez_nombre: e.target.value })} /></div>
+                  </div>
+                  <div className="form-grid">
+                    <div className="form-group"><label className="form-label">Fecha Inicio</label><input className="form-input" type="date" value={editForm.fecha_inicio || ''} onChange={e => setEditForm({ ...editForm, fecha_inicio: e.target.value })} /></div>
+                    <div className="form-group"><label className="form-label">Fecha Cierre</label><input className="form-input" type="date" value={editForm.fecha_cierre || ''} onChange={e => setEditForm({ ...editForm, fecha_cierre: e.target.value })} /></div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <Campo label="Cliente" value={caso.clientes?.nombre} />
+                  <Campo label="Abogado Responsable" value={caso.perfiles?.nombre} />
+                  <Campo label="Etapa Procesal" value={caso.etapa_procesal} />
+                  <Campo label="Juzgado" value={caso.juzgado} />
+                  <Campo label="Nombre del Juez" value={caso.juez_nombre} />
+                  <Campo label="Fecha Inicio" value={formatearFecha(caso.fecha_inicio)} />
+                  <Campo label="Fecha Cierre" value={formatearFecha(caso.fecha_cierre)} />
+                </div>
+              )}
+            </div>
+
+            {/* SECCIÓN: DATOS FISCALES (solo penal) */}
+            {esPenal && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title" style={{ marginBottom: 16 }}>Datos Fiscales</div>
+                {editing ? (
+                  <div>
+                    <div className="form-grid">
+                      <div className="form-group"><label className="form-label">N° Carpeta Fiscal</label><input className="form-input" value={editForm.carpeta_fiscal || ''} onChange={e => setEditForm({ ...editForm, carpeta_fiscal: e.target.value })} /></div>
+                      <div className="form-group"><label className="form-label">Fiscalía</label><input className="form-input" value={editForm.fiscalia || ''} onChange={e => setEditForm({ ...editForm, fiscalia: e.target.value })} /></div>
+                    </div>
+                    <div className="form-group"><label className="form-label">Nombre del Fiscal</label><input className="form-input" value={editForm.fiscal_nombre || ''} onChange={e => setEditForm({ ...editForm, fiscal_nombre: e.target.value })} /></div>
+                    <div className="form-group"><label className="form-label">Delitos</label><textarea className="form-textarea" value={editForm.delitos || ''} onChange={e => setEditForm({ ...editForm, delitos: e.target.value })} placeholder="Lista de delitos imputados..." style={{ minHeight: 60 }} /></div>
+                  </div>
+                ) : (
+                  <div>
+                    <Campo label="N° Carpeta Fiscal" value={caso.carpeta_fiscal} />
+                    <Campo label="Fiscalía" value={caso.fiscalia} />
+                    <Campo label="Nombre del Fiscal" value={caso.fiscal_nombre} />
+                    <Campo label="Delitos" value={caso.delitos} multilinea />
+                  </div>
+                )}
               </div>
             )}
+
+            {/* SECCIÓN: PARTES PROCESALES */}
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title" style={{ marginBottom: 16 }}>Partes Procesales</div>
+              {editing ? (
+                <div>
+                  {esPenal ? (
+                    <>
+                      <div className="form-group"><label className="form-label">Procesados</label><textarea className="form-textarea" value={editForm.procesados || ''} onChange={e => setEditForm({ ...editForm, procesados: e.target.value })} placeholder="Nombres de los procesados, uno por línea..." style={{ minHeight: 70 }} /></div>
+                      <div className="form-group"><label className="form-label">Agraviados</label><textarea className="form-textarea" value={editForm.agraviados || ''} onChange={e => setEditForm({ ...editForm, agraviados: e.target.value })} placeholder="Nombres de los agraviados, uno por línea..." style={{ minHeight: 70 }} /></div>
+                      <div className="form-group"><label className="form-label">Terceros</label><textarea className="form-textarea" value={editForm.terceros || ''} onChange={e => setEditForm({ ...editForm, terceros: e.target.value })} placeholder="Nombres de los terceros, uno por línea..." style={{ minHeight: 70 }} /></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="form-group"><label className="form-label">Demandante(s)</label><textarea className="form-textarea" value={editForm.demandante || ''} onChange={e => setEditForm({ ...editForm, demandante: e.target.value })} placeholder="Nombres de los demandantes, uno por línea..." style={{ minHeight: 70 }} /></div>
+                      <div className="form-group"><label className="form-label">Demandado(s)</label><textarea className="form-textarea" value={editForm.demandado || ''} onChange={e => setEditForm({ ...editForm, demandado: e.target.value })} placeholder="Nombres de los demandados, uno por línea..." style={{ minHeight: 70 }} /></div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {esPenal ? (
+                    <>
+                      <Campo label="Procesados" value={caso.procesados} multilinea />
+                      <Campo label="Agraviados" value={caso.agraviados} multilinea />
+                      <Campo label="Terceros" value={caso.terceros} multilinea />
+                    </>
+                  ) : (
+                    <>
+                      <Campo label="Demandante(s)" value={caso.demandante} multilinea />
+                      <Campo label="Demandado(s)" value={caso.demandado} multilinea />
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* SECCIÓN: NÚMEROS DE EXPEDIENTE JUDICIAL */}
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title" style={{ marginBottom: 12 }}>Números de Expediente Judicial</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                Registra los números que el expediente recibe en cada etapa o instancia.
+              </div>
+
+              {numerosExpediente.length > 0 ? (
+                <div style={{ marginBottom: 16 }}>
+                  {numerosExpediente.map(n => (
+                    <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--cream)', borderRadius: 6, marginBottom: 6 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{n.etapa}</div>
+                        <div style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--navy)' }}>{n.numero}</div>
+                      </div>
+                      <button className="btn-icon" onClick={() => handleEliminarNumero(n.id)} style={{ color: 'var(--danger)' }} title="Eliminar"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', background: 'var(--cream)', borderRadius: 6, marginBottom: 16 }}>
+                  Aún no hay números registrados
+                </div>
+              )}
+
+              <form onSubmit={handleAgregarNumero}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>Agregar nuevo número:</div>
+                <div className="form-grid" style={{ marginBottom: 8 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <select className="form-select" value={nuevoNumero.etapa} onChange={e => setNuevoNumero({ ...nuevoNumero, etapa: e.target.value })} required>
+                      <option value="">Seleccionar etapa...</option>
+                      {etapasDisponibles.map(et => <option key={et} value={et}>{et}</option>)}
+                      <option value="__custom__">+ Escribir etapa personalizada</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <input className="form-input" value={nuevoNumero.numero} onChange={e => setNuevoNumero({ ...nuevoNumero, numero: e.target.value })} placeholder="N° de expediente" />
+                  </div>
+                </div>
+                {nuevoNumero.etapa === '__custom__' && (
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <input className="form-input" value={nuevoNumero.etapaCustom} onChange={e => setNuevoNumero({ ...nuevoNumero, etapaCustom: e.target.value })} placeholder="Nombre de la etapa personalizada" required />
+                  </div>
+                )}
+                <button type="submit" className="btn btn-outline btn-sm" disabled={!nuevoNumero.etapa || !nuevoNumero.numero}><Plus size={14} />Agregar número</button>
+              </form>
+            </div>
+
+            {/* SECCIÓN: DESCRIPCIÓN Y NOTAS */}
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 16 }}>Descripción y Notas</div>
+              {editing ? (
+                <div>
+                  <div className="form-group"><label className="form-label">Descripción</label><textarea className="form-textarea" value={editForm.descripcion || ''} onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} placeholder="Descripción breve del caso..." style={{ minHeight: 80 }} /></div>
+                  <div className="form-group"><label className="form-label">Notas y Observaciones</label><textarea className="form-textarea" value={editForm.notas_observaciones || ''} onChange={e => setEditForm({ ...editForm, notas_observaciones: e.target.value })} placeholder="Notas internas, observaciones, recordatorios..." style={{ minHeight: 80 }} /></div>
+                </div>
+              ) : (
+                <div>
+                  <Campo label="Descripción" value={caso.descripcion} multilinea />
+                  <Campo label="Notas y Observaciones" value={caso.notas_observaciones} multilinea />
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* COLUMNA DERECHA: resumen */}
           <div>
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Resumen</div>
