@@ -12,6 +12,7 @@ import Tareas from './pages/Tareas'
 import Horas from './pages/Horas'
 import Reportes from './pages/Reportes'
 import Usuarios from './pages/Usuarios'
+import Permisos from './pages/Permisos'
 import Archivados from './pages/Archivados'
 
 function ProtectedRoute({ children, adminOnly = false }) {
@@ -41,6 +42,7 @@ function AppRoutes() {
         <Route path="/reportes" element={<Reportes />} />
         <Route path="/archivados" element={<Archivados />} />
         <Route path="/usuarios" element={<ProtectedRoute adminOnly><Usuarios /></ProtectedRoute>} />
+        <Route path="/permisos" element={<ProtectedRoute adminOnly><Permisos /></ProtectedRoute>} />
       </Route>
     </Routes>
   )
