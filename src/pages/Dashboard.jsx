@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { inicioMesEnLima, formatearFecha } from '../lib/dateUtils'
+import { inicioMesEnLima, formatearFecha, hoyEnLima } from '../lib/dateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { Link } from 'react-router-dom'
-import { FolderOpen, Users, Clock, CheckSquare, AlertCircle, TrendingUp } from 'lucide-react'
+import { FolderOpen, Users, Clock, CheckSquare, AlertCircle, Calendar as CalendarIcon } from 'lucide-react'
 
 const TIPO_COLORS = { civil: '#1a56db', penal: '#c81e1e', laboral: '#057a55', constitucional: '#d97706', administrativo: '#7e3af2', consulta: '#1c7ed6' }
+const EVENTO_COLORS = { audiencia: '#c81e1e', reunion: '#1a56db', vencimiento_procesal: '#d97706', plazo_administrativo: '#7e3af2', otro: '#057a55' }
+const EVENTO_LABELS = { audiencia: 'Audiencia', reunion: 'Reunión', vencimiento_procesal: 'Vencimiento', plazo_administrativo: 'Plazo Admin.', otro: 'Otro' }
 
 export default function Dashboard() {
   const { perfil } = useAuth()
@@ -13,6 +15,7 @@ export default function Dashboard() {
   const [casosPorTipo, setCasosPorTipo] = useState([])
   const [ultimosCasos, setUltimosCasos] = useState([])
   const [tareasUrgentes, setTareasUrgentes] = useState([])
+  const [proximosEventos, setProximosEventos] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -20,13 +23,15 @@ export default function Dashboard() {
   }, [])
 
   async function loadDashboard() {
-    const [casosRes, clientesRes, tareasRes, horasRes, ultimosRes, urgentesRes] = await Promise.all([
+    const hoy = hoyEnLima()
+    const [casosRes, clientesRes, tareasRes, horasRes, ultimosRes, urgentesRes, eventosRes] = await Promise.all([
       supabase.from('casos').select('tipo, estado'),
       supabase.from('clientes').select('id', { count: 'exact', head: true }),
       supabase.from('tareas').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente'),
       supabase.from('horas_trabajadas').select('horas').gte('fecha', inicioMesEnLima()),
       supabase.from('casos').select('*, clientes(nombre), perfiles(nombre)').order('creado_en', { ascending: false }).limit(5),
-      supabase.from('tareas').select('*, casos(titulo, numero_expediente), perfiles!tareas_asignado_a_fkey(nombre)').eq('estado', 'pendiente').eq('prioridad', 'alta').order('fecha_vencimiento').limit(5)
+      supabase.from('tareas').select('*, casos(titulo, numero_expediente), perfiles!tareas_asignado_a_fkey(nombre)').eq('estado', 'pendiente').eq('prioridad', 'alta').order('fecha_vencimiento').limit(5),
+      supabase.from('eventos_calendario').select('*, casos(id, titulo, numero_expediente)').gte('fecha', hoy).order('fecha').order('hora_inicio').limit(5)
     ])
 
     const casos = casosRes.data || []
@@ -39,6 +44,7 @@ export default function Dashboard() {
     setCasosPorTipo(Object.entries(tipoCount).map(([tipo, count]) => ({ tipo, count, pct: Math.round(count / casos.length * 100) })))
     setUltimosCasos(ultimosRes.data || [])
     setTareasUrgentes(urgentesRes.data || [])
+    setProximosEventos(eventosRes.data || [])
     setLoading(false)
   }
 
@@ -76,7 +82,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, marginBottom: 20 }}>
         <div className="card">
           <div className="card-header"><div className="card-title">Expedientes por Materia</div></div>
           {casosPorTipo.length === 0 ? (
@@ -93,6 +99,37 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title"><CalendarIcon size={16} style={{ display: 'inline', marginRight: 6, color: 'var(--navy)' }} />Próximos Eventos</div>
+            <Link to="/calendario" className="btn btn-sm btn-outline">Ver todos</Link>
+          </div>
+          {proximosEventos.length === 0 ? (
+            <div className="empty-state"><CalendarIcon size={32} /><p>Sin eventos próximos</p></div>
+          ) : (
+            proximosEventos.map(ev => (
+              <Link
+                key={ev.id}
+                to="/calendario"
+                style={{ display: 'block', padding: '10px 8px', margin: '0 -8px', borderBottom: '1px solid var(--border-light)', textDecoration: 'none', color: 'inherit', borderRadius: 4, transition: 'background 0.15s' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--cream)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: EVENTO_COLORS[ev.tipo] }}></div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>{EVENTO_LABELS[ev.tipo]}</span>
+                </div>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 2 }}>{ev.titulo}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  {formatearFecha(ev.fecha, { weekday: 'short', day: 'numeric', month: 'short' })}
+                  {ev.hora_inicio && ` · ${ev.hora_inicio.slice(0, 5)}`}
+                  {ev.casos && ` · ${ev.casos.numero_expediente}`}
+                </div>
+              </Link>
+            ))
           )}
         </div>
 
