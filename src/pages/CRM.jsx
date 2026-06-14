@@ -52,7 +52,7 @@ export default function CRM() {
     setLoading(true)
     const hoy = hoyEnLima()
     const [prospectosRes, abogadosRes, recordatoriosRes] = await Promise.all([
-      supabase.from('prospectos').select('*, perfiles(id, nombre)').order('creado_en', { ascending: false }),
+      supabase.from('prospectos').select('*, perfiles!prospectos_abogado_responsable_id_fkey(id, nombre)').order('creado_en', { ascending: false }),
       supabase.from('perfiles').select('id, nombre').eq('activo', true).order('nombre'),
       supabase.from('prospecto_recordatorios').select('prospecto_id, fecha').eq('completado', false).lte('fecha', hoy)
     ])
