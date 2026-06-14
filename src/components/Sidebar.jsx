@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { LayoutDashboard, FolderOpen, Users, Clock, BarChart2, CheckSquare, UserCog, LogOut, Scale, Archive } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, Users, Clock, BarChart2, CheckSquare, UserCog, LogOut, Scale, Archive, Calendar } from 'lucide-react'
 
 const ROLES = { socio_admin: 'Socio Administrador', abogado_senior: 'Abogado Senior', abogado: 'Abogado', asistente: 'Asistente' }
 
@@ -33,6 +33,9 @@ export default function Sidebar() {
         </Link>
         <Link to="/clientes" className={`nav-item ${isActive('/clientes') ? 'active' : ''}`}>
           <Users size={16} /> Clientes
+        </Link>
+        <Link to="/calendario" className={`nav-item ${isActive('/calendario') ? 'active' : ''}`}>
+          <Calendar size={16} /> Calendario
         </Link>
         <Link to="/tareas" className={`nav-item ${isActive('/tareas') ? 'active' : ''}`}>
           <CheckSquare size={16} /> Tareas
