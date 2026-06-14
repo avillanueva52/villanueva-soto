@@ -7,6 +7,7 @@ import Casos from './pages/Casos'
 import CasoDetalle from './pages/CasoDetalle'
 import Clientes from './pages/Clientes'
 import ClienteDetalle from './pages/ClienteDetalle'
+import Calendario from './pages/Calendario'
 import Tareas from './pages/Tareas'
 import Horas from './pages/Horas'
 import Reportes from './pages/Reportes'
@@ -34,6 +35,7 @@ function AppRoutes() {
         <Route path="/casos/:id" element={<CasoDetalle />} />
         <Route path="/clientes" element={<Clientes />} />
         <Route path="/clientes/:id" element={<ClienteDetalle />} />
+        <Route path="/calendario" element={<Calendario />} />
         <Route path="/tareas" element={<Tareas />} />
         <Route path="/horas" element={<Horas />} />
         <Route path="/reportes" element={<Reportes />} />
