@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { LayoutDashboard, FolderOpen, Users, Clock, BarChart2, CheckSquare, UserCog, LogOut, Scale, Archive, Calendar, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, FolderOpen, Users, Clock, BarChart2, CheckSquare, UserCog, LogOut, Scale, Archive, Calendar, ShieldCheck, UserPlus } from 'lucide-react'
 
 const ROLES = { socio_admin: 'Socio Administrador', abogado_senior: 'Abogado Senior', abogado: 'Abogado', asistente: 'Asistente' }
 
@@ -10,6 +10,9 @@ export default function Sidebar() {
   const isActive = (path) => location.pathname.startsWith(path)
 
   const initials = perfil?.nombre?.split(' ').map(n => n[0]).slice(0, 2).join('') || 'US'
+
+  // Helper: el usuario tiene acceso al módulo si es socio_admin o tiene el booleano correspondiente
+  const tieneAcceso = (campo) => perfil?.rol === 'socio_admin' || perfil?.[campo] === true
 
   return (
     <aside className="sidebar">
@@ -46,6 +49,15 @@ export default function Sidebar() {
         <Link to="/archivados" className={`nav-item ${isActive('/archivados') ? 'active' : ''}`}>
           <Archive size={16} /> Archivados
         </Link>
+
+        {tieneAcceso('acceso_crm') && (
+          <>
+            <div className="nav-section-title">Comercial</div>
+            <Link to="/crm" className={`nav-item ${isActive('/crm') ? 'active' : ''}`}>
+              <UserPlus size={16} /> CRM
+            </Link>
+          </>
+        )}
 
         <div className="nav-section-title">Reportes</div>
         <Link to="/reportes" className={`nav-item ${isActive('/reportes') ? 'active' : ''}`}>
