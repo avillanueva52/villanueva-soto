@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import Layout from './components/Layout'
+import PermisoRoute from './components/PermisoRoute'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Casos from './pages/Casos'
@@ -14,6 +15,8 @@ import Reportes from './pages/Reportes'
 import Usuarios from './pages/Usuarios'
 import Permisos from './pages/Permisos'
 import Archivados from './pages/Archivados'
+import CRM from './pages/CRM'
+import ProspectoDetalle from './pages/ProspectoDetalle'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { user, perfil, loading } = useAuth()
@@ -41,6 +44,8 @@ function AppRoutes() {
         <Route path="/horas" element={<Horas />} />
         <Route path="/reportes" element={<Reportes />} />
         <Route path="/archivados" element={<Archivados />} />
+        <Route path="/crm" element={<PermisoRoute permiso="acceso_crm"><CRM /></PermisoRoute>} />
+        <Route path="/crm/:id" element={<PermisoRoute permiso="acceso_crm"><ProspectoDetalle /></PermisoRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute adminOnly><Usuarios /></ProtectedRoute>} />
         <Route path="/permisos" element={<ProtectedRoute adminOnly><Permisos /></ProtectedRoute>} />
       </Route>
