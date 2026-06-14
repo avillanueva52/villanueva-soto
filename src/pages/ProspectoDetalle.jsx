@@ -44,7 +44,7 @@ export default function ProspectoDetalle() {
   async function loadAll() {
     setLoading(true)
     const [prospectoRes, actRes, recRes, equipoRes, abogadosRes] = await Promise.all([
-      supabase.from('prospectos').select('*, perfiles(id, nombre), clientes(id, nombre)').eq('id', id).single(),
+      supabase.from('prospectos').select('*, perfiles!prospectos_abogado_responsable_id_fkey(id, nombre), clientes(id, nombre)').eq('id', id).single(),
       supabase.from('prospecto_actividades').select('*, perfiles(nombre)').eq('prospecto_id', id).order('fecha', { ascending: false }),
       supabase.from('prospecto_recordatorios').select('*, perfiles(nombre)').eq('prospecto_id', id).order('fecha'),
       supabase.from('prospecto_equipo').select('*, perfiles(id, nombre)').eq('prospecto_id', id),
