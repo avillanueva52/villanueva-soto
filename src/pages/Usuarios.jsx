@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { Plus, Edit2, UserCog } from 'lucide-react'
+import { Plus, Edit2, UserCog, UserX, UserCheck, Eye, EyeOff } from 'lucide-react'
+import { formatearFecha } from '../lib/dateUtils'
 
 const ROLES = { socio_admin: 'Socio Administrador', abogado_senior: 'Abogado Senior', abogado: 'Abogado', asistente: 'Asistente' }
 const ROL_COLORS = { socio_admin: 'var(--gold)', abogado_senior: 'var(--info)', abogado: 'var(--success)', asistente: 'var(--text-muted)' }
@@ -13,7 +14,8 @@ export default function Usuarios() {
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState(null)
   const [showInvite, setShowInvite] = useState(false)
-  const [form, setForm] = useState({ nombre: '', rol: 'abogado', costo_hora: '', activo: true })
+  const [mostrarInactivos, setMostrarInactivos] = useState(false)
+  const [form, setForm] = useState({ nombre: '', rol: 'abogado', costo_hora: '', activo: true, fecha_ingreso: '' })
   const [inviteForm, setInviteForm] = useState({ email: '', nombre: '', rol: 'abogado', costo_hora: '', password: '' })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
@@ -27,7 +29,7 @@ export default function Usuarios() {
   }
 
   function openEdit(u) {
-    setForm({ nombre: u.nombre, rol: u.rol, costo_hora: u.costo_hora || '', activo: u.activo })
+    setForm({ nombre: u.nombre, rol: u.rol, costo_hora: u.costo_hora || '', activo: u.activo, fecha_ingreso: u.fecha_ingreso || '' })
     setEditando(u.id)
     setShowModal(true)
   }
@@ -35,7 +37,13 @@ export default function Usuarios() {
   async function handleSave(e) {
     e.preventDefault()
     setSaving(true)
-    await supabase.from('perfiles').update({ nombre: form.nombre, rol: form.rol, costo_hora: parseFloat(form.costo_hora) || 0, activo: form.activo }).eq('id', editando)
+    await supabase.from('perfiles').update({
+      nombre: form.nombre,
+      rol: form.rol,
+      costo_hora: parseFloat(form.costo_hora) || 0,
+      activo: form.activo,
+      fecha_ingreso: form.fecha_ingreso || null
+    }).eq('id', editando)
     setShowModal(false)
     loadUsuarios()
     setSaving(false)
@@ -45,11 +53,6 @@ export default function Usuarios() {
     e.preventDefault()
     setSaving(true)
     setMsg('')
-    const { data, error } = await supabase.auth.admin ? 
-      { data: null, error: { message: 'Usa el panel de Supabase para crear usuarios' } } :
-      { data: null, error: null }
-    
-    // Create user via signUp (will send verification email)
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: inviteForm.email,
       password: inviteForm.password,
@@ -73,6 +76,33 @@ export default function Usuarios() {
     setSaving(false)
   }
 
+  async function inactivarUsuario(u) {
+    // Validación crítica: no permitir que un socio_admin se inactive a sí mismo
+    if (u.id === miPerfil?.id) {
+      alert('No puedes inactivarte a ti mismo. Pide a otro Socio Administrador que lo haga.')
+      return
+    }
+
+    const mensaje = `¿Inactivar a "${u.nombre}"?\n\n` +
+      `Esta persona no podrá iniciar sesión ni aparecerá en listas de selección (asignación de casos, calendario, etc.).\n\n` +
+      `Todos sus datos históricos se mantendrán intactos: casos, horas trabajadas, documentos, prospectos, sueldos, etc.\n\n` +
+      `Puedes reactivarla en cualquier momento.`
+
+    if (!confirm(mensaje)) return
+
+    await supabase.from('perfiles').update({ activo: false }).eq('id', u.id)
+    loadUsuarios()
+  }
+
+  async function reactivarUsuario(u) {
+    if (!confirm(`¿Reactivar a "${u.nombre}"? Podrá volver a iniciar sesión y aparecer en las listas del sistema.`)) return
+    await supabase.from('perfiles').update({ activo: true }).eq('id', u.id)
+    loadUsuarios()
+  }
+
+  const usuariosFiltrados = mostrarInactivos ? usuarios : usuarios.filter(u => u.activo)
+  const inactivosCount = usuarios.filter(u => !u.activo).length
+
   return (
     <div>
       <div className="page-header">
@@ -80,7 +110,17 @@ export default function Usuarios() {
           <div className="page-title">Usuarios del Sistema</div>
           <div className="page-subtitle">Gestiona los miembros del equipo y sus roles</div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowInvite(true)}><Plus size={16} />Nuevo Usuario</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-outline"
+            onClick={() => setMostrarInactivos(!mostrarInactivos)}
+            title={mostrarInactivos ? 'Ocultar inactivos' : 'Mostrar inactivos'}
+          >
+            {mostrarInactivos ? <EyeOff size={16} /> : <Eye size={16} />}
+            {mostrarInactivos ? 'Ocultar inactivos' : `Ver inactivos${inactivosCount > 0 ? ` (${inactivosCount})` : ''}`}
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowInvite(true)}><Plus size={16} />Nuevo Usuario</button>
+        </div>
       </div>
 
       <div className="card">
@@ -89,18 +129,50 @@ export default function Usuarios() {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Costo/Hora (S/)</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Costo/Hora (S/)</th><th>Fecha Ingreso</th><th>Estado</th><th style={{ width: 90 }}></th></tr></thead>
               <tbody>
-                {usuarios.length === 0 ? (
-                  <tr><td colSpan={6}><div className="empty-state"><UserCog size={36} /><p>No hay usuarios registrados</p></div></td></tr>
-                ) : usuarios.map(u => (
-                  <tr key={u.id}>
-                    <td style={{ fontWeight: 600 }}>{u.nombre}{u.id === miPerfil?.id && <span style={{ marginLeft: 8, fontSize: '0.7rem', background: 'var(--gold-pale)', color: 'var(--gold)', padding: '1px 6px', borderRadius: 4 }}>Yo</span>}</td>
+                {usuariosFiltrados.length === 0 ? (
+                  <tr><td colSpan={7}><div className="empty-state"><UserCog size={36} /><p>{mostrarInactivos ? 'No hay usuarios registrados' : 'No hay usuarios activos'}</p></div></td></tr>
+                ) : usuariosFiltrados.map(u => (
+                  <tr key={u.id} style={{ opacity: u.activo ? 1 : 0.6 }}>
+                    <td style={{ fontWeight: 600 }}>
+                      {u.nombre}
+                      {u.id === miPerfil?.id && <span style={{ marginLeft: 8, fontSize: '0.7rem', background: 'var(--gold-pale)', color: 'var(--gold)', padding: '1px 6px', borderRadius: 4 }}>Yo</span>}
+                    </td>
                     <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{u.email}</td>
                     <td><span style={{ fontSize: '0.75rem', fontWeight: 600, color: ROL_COLORS[u.rol], background: 'var(--cream)', padding: '2px 8px', borderRadius: 4 }}>{ROLES[u.rol] || u.rol}</span></td>
                     <td style={{ textAlign: 'right', fontWeight: 600 }}>{u.costo_hora ? `S/ ${parseFloat(u.costo_hora).toFixed(2)}` : '—'}</td>
-                    <td><span style={{ fontSize: '0.75rem', background: u.activo ? 'var(--success-bg)' : 'var(--danger-bg)', color: u.activo ? 'var(--success)' : 'var(--danger)', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>{u.activo ? 'Activo' : 'Inactivo'}</span></td>
-                    <td><button className="btn-icon" onClick={() => openEdit(u)}><Edit2 size={14} /></button></td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{u.fecha_ingreso ? formatearFecha(u.fecha_ingreso) : '—'}</td>
+                    <td>
+                      <span style={{ fontSize: '0.75rem', background: u.activo ? 'var(--success-bg)' : 'var(--danger-bg)', color: u.activo ? 'var(--success)' : 'var(--danger)', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>
+                        {u.activo ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <button className="btn-icon" onClick={() => openEdit(u)} title="Editar"><Edit2 size={14} /></button>
+                        {u.activo ? (
+                          <button
+                            className="btn-icon"
+                            onClick={() => inactivarUsuario(u)}
+                            title="Inactivar usuario"
+                            style={{ color: u.id === miPerfil?.id ? 'var(--text-muted)' : 'var(--danger)' }}
+                            disabled={u.id === miPerfil?.id}
+                          >
+                            <UserX size={14} />
+                          </button>
+                        ) : (
+                          <button
+                            className="btn-icon"
+                            onClick={() => reactivarUsuario(u)}
+                            title="Reactivar usuario"
+                            style={{ color: 'var(--success)' }}
+                          >
+                            <UserCheck size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -111,10 +183,10 @@ export default function Usuarios() {
 
       <div className="card" style={{ marginTop: 20 }}>
         <div className="card-title" style={{ marginBottom: 12 }}>Tarifas por Rol</div>
-        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 12 }}>El costo por hora se usa para calcular el valor de los reportes de facturación.</p>
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 12 }}>El costo por hora se usa para calcular el valor de los reportes de facturación. Solo se incluyen usuarios activos.</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
           {Object.entries(ROLES).map(([rol, label]) => {
-            const uRol = usuarios.filter(u => u.rol === rol)
+            const uRol = usuarios.filter(u => u.rol === rol && u.activo)
             const promedio = uRol.length ? uRol.reduce((s, u) => s + (u.costo_hora || 0), 0) / uRol.length : 0
             return (
               <div key={rol} style={{ background: 'var(--cream)', borderRadius: 8, padding: '14px 16px' }}>
@@ -137,6 +209,11 @@ export default function Usuarios() {
                 <div className="form-grid">
                   <div className="form-group"><label className="form-label">Rol</label><select className="form-select" value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value })}>{Object.entries(ROLES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Costo por Hora (S/)</label><input className="form-input" type="number" step="0.01" min="0" value={form.costo_hora} onChange={e => setForm({ ...form, costo_hora: e.target.value })} placeholder="150.00" /></div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Fecha de Ingreso al Estudio</label>
+                  <input className="form-input" type="date" value={form.fecha_ingreso} onChange={e => setForm({ ...form, fecha_ingreso: e.target.value })} />
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>Útil para el módulo de RRHH (vacaciones, antigüedad).</div>
                 </div>
                 <div className="form-group">
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.85rem' }}>
