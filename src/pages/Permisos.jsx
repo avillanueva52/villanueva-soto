@@ -21,6 +21,7 @@ export default function Permisos() {
   const [usuarios, setUsuarios] = useState([])
   const [loading, setLoading] = useState(true)
   const [guardandoId, setGuardandoId] = useState(null)
+  const [guardadoRecientemente, setGuardadoRecientemente] = useState({})
 
   useEffect(() => { loadUsuarios() }, [])
 
@@ -35,11 +36,11 @@ export default function Permisos() {
   }
 
   async function togglePermiso(usuario, campo) {
-    // Los socio_admin tienen acceso automático a todo, no se les cambia desde aquí
     if (usuario.rol === 'socio_admin') return
 
     const nuevoValor = !usuario[campo]
-    setGuardandoId(usuario.id + campo)
+    const key = usuario.id + campo
+    setGuardandoId(key)
 
     // Optimistic update
     setUsuarios(prev => prev.map(u => u.id === usuario.id ? { ...u, [campo]: nuevoValor } : u))
@@ -50,6 +51,16 @@ export default function Permisos() {
       // Si falla, revertimos
       setUsuarios(prev => prev.map(u => u.id === usuario.id ? { ...u, [campo]: !nuevoValor } : u))
       alert('Error al actualizar el permiso: ' + error.message)
+    } else {
+      // Mostrar indicador "Guardado ✓" por 2 segundos
+      setGuardadoRecientemente(prev => ({ ...prev, [key]: true }))
+      setTimeout(() => {
+        setGuardadoRecientemente(prev => {
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+      }, 2000)
     }
 
     setGuardandoId(null)
@@ -70,7 +81,7 @@ export default function Permisos() {
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <ShieldCheck size={20} color="var(--gold)" style={{ flexShrink: 0, marginTop: 2 }} />
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            <strong style={{ color: 'var(--text-primary)' }}>Cómo funciona:</strong> los usuarios con la casilla marcada podrán ver y usar el módulo correspondiente. El resto del equipo no verá esos módulos en el menú lateral. Los <strong>Socios Administradores</strong> tienen acceso automático a todos los módulos.
+            <strong style={{ color: 'var(--text-primary)' }}>Cómo funciona:</strong> los cambios se guardan automáticamente al marcar o desmarcar una casilla. Aparecerá un ✓ verde por unos segundos para confirmar que el cambio se grabó. Los <strong>Socios Administradores</strong> tienen acceso automático a todos los módulos.
           </div>
         </div>
       </div>
@@ -86,7 +97,7 @@ export default function Permisos() {
                   <th>Usuario</th>
                   <th>Rol</th>
                   {MODULOS.map(m => (
-                    <th key={m.key} style={{ textAlign: 'center', minWidth: 120 }}>
+                    <th key={m.key} style={{ textAlign: 'center', minWidth: 140 }}>
                       <div>{m.label}</div>
                       <div style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--text-muted)', marginTop: 2 }}>{m.desc}</div>
                     </th>
@@ -108,8 +119,9 @@ export default function Permisos() {
                         </span>
                       </td>
                       {MODULOS.map(m => {
-                        const guardando = guardandoId === u.id + m.key
-                        const tieneAcceso = esSocioAdmin || u[m.key]
+                        const key = u.id + m.key
+                        const guardando = guardandoId === key
+                        const reciénGuardado = guardadoRecientemente[key]
                         return (
                           <td key={m.key} style={{ textAlign: 'center' }}>
                             {esSocioAdmin ? (
@@ -118,15 +130,32 @@ export default function Permisos() {
                                 Acceso total
                               </div>
                             ) : (
-                              <label style={{ display: 'inline-flex', alignItems: 'center', cursor: guardando ? 'wait' : 'pointer', padding: 4 }}>
-                                <input
-                                  type="checkbox"
-                                  checked={!!u[m.key]}
-                                  onChange={() => togglePermiso(u, m.key)}
-                                  disabled={guardando}
-                                  style={{ width: 18, height: 18, cursor: guardando ? 'wait' : 'pointer', accentColor: 'var(--navy)' }}
-                                />
-                              </label>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', cursor: guardando ? 'wait' : 'pointer', padding: 4 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={!!u[m.key]}
+                                    onChange={() => togglePermiso(u, m.key)}
+                                    disabled={guardando}
+                                    style={{ width: 18, height: 18, cursor: guardando ? 'wait' : 'pointer', accentColor: 'var(--navy)' }}
+                                  />
+                                </label>
+                                {/* Indicador "Guardado ✓" */}
+                                <div style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                  fontSize: '0.72rem',
+                                  color: 'var(--success)',
+                                  fontWeight: 600,
+                                  opacity: reciénGuardado ? 1 : 0,
+                                  transition: 'opacity 0.3s',
+                                  pointerEvents: 'none',
+                                  width: 70
+                                }}>
+                                  <Check size={12} />Guardado
+                                </div>
+                              </div>
                             )}
                           </td>
                         )
@@ -138,10 +167,6 @@ export default function Permisos() {
             </table>
           </div>
         )}
-      </div>
-
-      <div style={{ marginTop: 16, fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-        Los cambios se guardan automáticamente al marcar o desmarcar una casilla.
       </div>
     </div>
   )
