@@ -18,6 +18,9 @@ import Archivados from './pages/Archivados'
 import CRM from './pages/CRM'
 import ProspectoDetalle from './pages/ProspectoDetalle'
 import RRHH from './pages/RRHH'
+import Honorarios from './pages/Honorarios'
+import FacturaDetalle from './pages/FacturaDetalle'
+import FacturaImprimible from './pages/FacturaImprimible'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { user, perfil, loading } = useAuth()
@@ -48,6 +51,9 @@ function AppRoutes() {
         <Route path="/crm" element={<PermisoRoute permiso="acceso_crm"><CRM /></PermisoRoute>} />
         <Route path="/crm/:id" element={<PermisoRoute permiso="acceso_crm"><ProspectoDetalle /></PermisoRoute>} />
         <Route path="/rrhh" element={<PermisoRoute permiso="acceso_rrhh"><RRHH /></PermisoRoute>} />
+        <Route path="/honorarios" element={<PermisoRoute permiso="acceso_honorarios"><Honorarios /></PermisoRoute>} />
+        <Route path="/honorarios/:id" element={<PermisoRoute permiso="acceso_honorarios"><FacturaDetalle /></PermisoRoute>} />
+        <Route path="/honorarios/:id/imprimir" element={<PermisoRoute permiso="acceso_honorarios"><FacturaImprimible /></PermisoRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute adminOnly><Usuarios /></ProtectedRoute>} />
         <Route path="/permisos" element={<ProtectedRoute adminOnly><Permisos /></ProtectedRoute>} />
       </Route>
