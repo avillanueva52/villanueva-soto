@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import { formatearFecha } from '../lib/dateUtils'
-import { ArrowLeft, Edit2, Search, RotateCcw, FolderOpen, Activity, CheckSquare } from 'lucide-react'
+import { ArrowLeft, Edit2, Search, RotateCcw, FolderOpen, Activity, CheckSquare, Trash2 } from 'lucide-react'
 
 const TIPOS = ['civil', 'penal', 'constitucional', 'laboral', 'administrativo', 'consulta']
 const ESTADOS_CASO = ['activo', 'archivado', 'cerrado', 'suspendido']
@@ -10,6 +11,7 @@ const ESTADOS_CASO = ['activo', 'archivado', 'cerrado', 'suspendido']
 export default function ClienteDetalle() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { perfil } = useAuth()
   const [cliente, setCliente] = useState(null)
   const [casos, setCasos] = useState([])
   const [estadosRecientes, setEstadosRecientes] = useState([])
@@ -22,6 +24,8 @@ export default function ClienteDetalle() {
   const [search, setSearch] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
+
+  const esSocioAdmin = perfil?.rol === 'socio_admin'
 
   useEffect(() => { loadAll() }, [id])
 
@@ -90,6 +94,39 @@ export default function ClienteDetalle() {
     loadAll()
   }
 
+  async function handleEliminarPermanentemente() {
+    // Doble verificación: no permitir si tiene casos asociados
+    if (casos.length > 0) {
+      alert(
+        `No se puede eliminar este cliente.\n\n` +
+        `Tiene ${casos.length} caso${casos.length !== 1 ? 's' : ''} asociado${casos.length !== 1 ? 's' : ''}.\n\n` +
+        `Para conservar el historial, usa "Archivar" en su lugar. ` +
+        `Si realmente quieres eliminar el cliente, primero debes eliminar todos sus casos.`
+      )
+      return
+    }
+
+    // Doble confirmación porque es una acción destructiva irreversible
+    const c1 = confirm(
+      `⚠️ ELIMINAR PERMANENTEMENTE a "${cliente.nombre}"\n\n` +
+      `Esta acción NO se puede deshacer. Todos los datos del cliente se borrarán definitivamente.\n\n` +
+      `Si tienes dudas, mejor usa "Archivar" — el cliente se oculta pero se conserva.\n\n` +
+      `¿Continuar con la eliminación?`
+    )
+    if (!c1) return
+
+    const c2 = confirm(`Última confirmación: ¿borrar a "${cliente.nombre}" para siempre?`)
+    if (!c2) return
+
+    const { error } = await supabase.from('clientes').delete().eq('id', id)
+    if (error) {
+      alert('Error al eliminar: ' + error.message)
+      return
+    }
+
+    navigate('/clientes')
+  }
+
   const casosFiltrados = casos.filter(c => {
     const matchSearch = !search || c.titulo.toLowerCase().includes(search.toLowerCase()) || c.numero_expediente.toLowerCase().includes(search.toLowerCase())
     const matchTipo = !filtroTipo || c.tipo === filtroTipo
@@ -101,6 +138,7 @@ export default function ClienteDetalle() {
   const casosCerrados = casos.filter(c => c.estado === 'cerrado' || c.estado === 'archivado').length
   const totalHoras = casos.reduce((sum, c) => sum + (c.horas_trabajadas || []).reduce((s, h) => s + (h.horas || 0), 0), 0)
   const valorEstimado = casos.reduce((sum, c) => sum + (c.horas_trabajadas || []).reduce((s, h) => s + ((h.horas || 0) * (h.perfiles?.costo_hora || 0)), 0), 0)
+  const sePuedeEliminar = casos.length === 0
 
   if (loading) return <div className="loading-page"><div className="spinner"></div></div>
   if (!cliente) return <div style={{ padding: 40, textAlign: 'center' }}>Cliente no encontrado</div>
@@ -122,6 +160,19 @@ export default function ClienteDetalle() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {esSocioAdmin && (
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={handleEliminarPermanentemente}
+              style={{
+                color: sePuedeEliminar ? 'var(--danger)' : 'var(--text-muted)',
+                borderColor: sePuedeEliminar ? 'var(--danger)' : 'var(--border)'
+              }}
+              title={sePuedeEliminar ? 'Eliminar permanentemente este cliente' : `Tiene ${casos.length} caso(s) asociado(s). Solo se puede archivar.`}
+            >
+              <Trash2 size={14} />Eliminar
+            </button>
+          )}
           {cliente.activo === false ? (
             <button className="btn btn-outline btn-sm" onClick={handleReactivar}><RotateCcw size={14} />Reactivar</button>
           ) : (
