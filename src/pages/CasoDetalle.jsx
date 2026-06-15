@@ -52,6 +52,8 @@ export default function CasoDetalle() {
   const [subTabDoc, setSubTabDoc] = useState('todos')
   const fileRef = useRef()
 
+  const esSocioAdmin = perfil?.rol === 'socio_admin'
+
   useEffect(() => { loadAll() }, [id])
 
   async function loadAll() {
@@ -115,6 +117,70 @@ export default function CasoDetalle() {
     setEditing(false)
     setEtapaCustomEdit(false)
   }
+
+  async function handleEliminarPermanentemente() {
+    // Recuento local de datos asociados
+    const totalDocs = documentos.length
+    const totalHoras = horas.length
+    const totalTareas = tareas.length
+    const totalEstados = estados.length
+    const totalNumeros = numerosExpediente.length
+
+    // Consultamos también los eventos del calendario vinculados a este caso
+    let totalEventos = 0
+    try {
+      const { count } = await supabase.from('eventos_calendario').select('id', { count: 'exact', head: true }).eq('caso_id', id)
+      totalEventos = count || 0
+    } catch (e) {
+      // Si la tabla no existe o falla, asumimos 0
+      totalEventos = 0
+    }
+
+    const totalAsociados = totalDocs + totalHoras + totalTareas + totalEstados + totalNumeros + totalEventos
+
+    if (totalAsociados > 0) {
+      const partes = []
+      if (totalDocs > 0) partes.push(`• ${totalDocs} documento${totalDocs !== 1 ? 's' : ''}`)
+      if (totalHoras > 0) partes.push(`• ${totalHoras} registro${totalHoras !== 1 ? 's' : ''} de horas`)
+      if (totalTareas > 0) partes.push(`• ${totalTareas} tarea${totalTareas !== 1 ? 's' : ''}`)
+      if (totalEstados > 0) partes.push(`• ${totalEstados} estado${totalEstados !== 1 ? 's' : ''} procesal${totalEstados !== 1 ? 'es' : ''}`)
+      if (totalNumeros > 0) partes.push(`• ${totalNumeros} número${totalNumeros !== 1 ? 's' : ''} judicial${totalNumeros !== 1 ? 'es' : ''}`)
+      if (totalEventos > 0) partes.push(`• ${totalEventos} evento${totalEventos !== 1 ? 's' : ''} del calendario`)
+
+      alert(
+        `No se puede eliminar este expediente.\n\n` +
+        `Tiene datos asociados:\n` +
+        partes.join('\n') +
+        `\n\nPara conservar el historial, archívalo cambiando su estado a "archivado".\n\n` +
+        `Si realmente quieres eliminarlo, primero elimina todos los datos asociados.`
+      )
+      return
+    }
+
+    // Doble confirmación para acción destructiva
+    const c1 = confirm(
+      `⚠️ ELIMINAR PERMANENTEMENTE el expediente:\n\n` +
+      `${caso.numero_expediente} — ${caso.titulo}\n\n` +
+      `Esta acción NO se puede deshacer. El expediente se borrará definitivamente.\n\n` +
+      `Si tienes dudas, mejor cambia su estado a "archivado".\n\n` +
+      `¿Continuar?`
+    )
+    if (!c1) return
+
+    const c2 = confirm(`Última confirmación: ¿borrar "${caso.numero_expediente}" para siempre?`)
+    if (!c2) return
+
+    const { error } = await supabase.from('casos').delete().eq('id', id)
+    if (error) {
+      alert('Error al eliminar: ' + error.message)
+      return
+    }
+
+    navigate('/casos')
+  }
+
+  // Aproximación local de si se puede eliminar (no incluye eventos del calendario, que se consultan al hacer clic)
+  const puedeEliminarAprox = documentos.length === 0 && horas.length === 0 && tareas.length === 0 && estados.length === 0 && numerosExpediente.length === 0
 
   async function handleAgregarNumero(e) {
     e.preventDefault()
@@ -328,7 +394,22 @@ export default function CasoDetalle() {
           </div>
         </div>
         {!editing ? (
-          <button className="btn btn-outline btn-sm" onClick={() => setEditing(true)}><Edit2 size={14} />Editar</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {esSocioAdmin && (
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={handleEliminarPermanentemente}
+                style={{
+                  color: puedeEliminarAprox ? 'var(--danger)' : 'var(--text-muted)',
+                  borderColor: puedeEliminarAprox ? 'var(--danger)' : 'var(--border)'
+                }}
+                title={puedeEliminarAprox ? 'Eliminar permanentemente este expediente' : 'Este expediente tiene datos asociados. Solo se puede archivar.'}
+              >
+                <Trash2 size={14} />Eliminar
+              </button>
+            )}
+            <button className="btn btn-outline btn-sm" onClick={() => setEditing(true)}><Edit2 size={14} />Editar</button>
+          </div>
         ) : (
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-outline btn-sm" onClick={cancelarEdicion}><X size={14} />Cancelar</button>
@@ -601,7 +682,6 @@ export default function CasoDetalle() {
       )}
 
       {tab === 'documentos' && (() => {
-        // Calculamos las carpetas únicas del caso y los documentos filtrados según la sub-pestaña activa
         const carpetasDocs = [...new Set(documentos.map(d => d.carpeta).filter(Boolean))].sort()
         const tieneSinCarpeta = documentos.some(d => !d.carpeta)
         const hayCarpetas = carpetasDocs.length > 0
@@ -623,32 +703,18 @@ export default function CasoDetalle() {
               </div>
             </div>
 
-            {/* Sub-pestañas de carpetas (solo si hay al menos una carpeta) */}
             {hayCarpetas && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid var(--border-light)' }}>
-                <button
-                  className={`btn btn-sm ${subTabDoc === 'todos' ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setSubTabDoc('todos')}
-                  style={{ fontSize: '0.78rem' }}
-                >
+                <button className={`btn btn-sm ${subTabDoc === 'todos' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSubTabDoc('todos')} style={{ fontSize: '0.78rem' }}>
                   Todos ({documentos.length})
                 </button>
                 {carpetasDocs.map(c => (
-                  <button
-                    key={c}
-                    className={`btn btn-sm ${subTabDoc === c ? 'btn-primary' : 'btn-outline'}`}
-                    onClick={() => setSubTabDoc(c)}
-                    style={{ fontSize: '0.78rem' }}
-                  >
+                  <button key={c} className={`btn btn-sm ${subTabDoc === c ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSubTabDoc(c)} style={{ fontSize: '0.78rem' }}>
                     {c} ({documentos.filter(d => d.carpeta === c).length})
                   </button>
                 ))}
                 {tieneSinCarpeta && (
-                  <button
-                    className={`btn btn-sm ${subTabDoc === '__sin_carpeta__' ? 'btn-primary' : 'btn-outline'}`}
-                    onClick={() => setSubTabDoc('__sin_carpeta__')}
-                    style={{ fontSize: '0.78rem' }}
-                  >
+                  <button className={`btn btn-sm ${subTabDoc === '__sin_carpeta__' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSubTabDoc('__sin_carpeta__')} style={{ fontSize: '0.78rem' }}>
                     Sin carpeta ({documentos.filter(d => !d.carpeta).length})
                   </button>
                 )}
@@ -668,7 +734,6 @@ export default function CasoDetalle() {
                       <tr key={doc.id}>
                         <td>
                           <a onClick={() => handleViewDoc(doc)} style={{ color: 'var(--navy)', fontWeight: 500, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}><FileText size={14} />{doc.nombre}</a>
-                          {/* En la vista "Todos" mostramos un badge con la carpeta para no perder el contexto */}
                           {subTabDoc === 'todos' && doc.carpeta && (
                             <div style={{ marginTop: 4, paddingLeft: 20 }}>
                               <span style={{ fontSize: '0.7rem', background: 'var(--gold-light)', color: 'var(--navy)', padding: '1px 8px', borderRadius: 4, fontWeight: 600 }}>📁 {doc.carpeta}</span>
@@ -859,13 +924,7 @@ export default function CasoDetalle() {
                       </div>
                       <div className="form-group" style={{ marginBottom: 8 }}>
                         <label className="form-label">Carpeta</label>
-                        <input
-                          className="form-input"
-                          list={`carpetas-existentes-${idx}`}
-                          value={item.carpeta}
-                          onChange={e => updateQueueItem(idx, 'carpeta', e.target.value)}
-                          placeholder="Opcional: ej. Principal, Cautelar, Cuaderno de Apelación..."
-                        />
+                        <input className="form-input" list={`carpetas-existentes-${idx}`} value={item.carpeta} onChange={e => updateQueueItem(idx, 'carpeta', e.target.value)} placeholder="Opcional: ej. Principal, Cautelar, Cuaderno de Apelación..." />
                         <datalist id={`carpetas-existentes-${idx}`}>
                           {[...new Set(documentos.map(d => d.carpeta).filter(Boolean))].map(c => <option key={c} value={c} />)}
                         </datalist>
@@ -920,13 +979,7 @@ export default function CasoDetalle() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Carpeta</label>
-                  <input
-                    className="form-input"
-                    list="carpetas-existentes-edit"
-                    value={editDocForm.carpeta}
-                    onChange={e => setEditDocForm({ ...editDocForm, carpeta: e.target.value })}
-                    placeholder="Opcional: ej. Principal, Cautelar, Cuaderno de Apelación..."
-                  />
+                  <input className="form-input" list="carpetas-existentes-edit" value={editDocForm.carpeta} onChange={e => setEditDocForm({ ...editDocForm, carpeta: e.target.value })} placeholder="Opcional: ej. Principal, Cautelar, Cuaderno de Apelación..." />
                   <datalist id="carpetas-existentes-edit">
                     {[...new Set(documentos.map(d => d.carpeta).filter(Boolean))].map(c => <option key={c} value={c} />)}
                   </datalist>
