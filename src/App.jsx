@@ -21,6 +21,7 @@ import RRHH from './pages/RRHH'
 import Honorarios from './pages/Honorarios'
 import FacturaDetalle from './pages/FacturaDetalle'
 import FacturaImprimible from './pages/FacturaImprimible'
+import RestablecerPassword from './pages/RestablecerPassword'
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { user, perfil, loading } = useAuth()
@@ -36,6 +37,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route path="/restablecer-password" element={<RestablecerPassword />} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<Dashboard />} />
