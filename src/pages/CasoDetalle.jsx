@@ -61,7 +61,8 @@ export default function CasoDetalle() {
       supabase.from('casos').select('*, clientes(id,nombre), perfiles(id,nombre)').eq('id', id).single(),
       supabase.from('documentos').select('*, perfiles(nombre)').eq('caso_id', id).order('fecha_documento', { ascending: false }),
       supabase.from('horas_trabajadas').select('*, perfiles(nombre,rol)').eq('caso_id', id).order('fecha', { ascending: false }),
-      supabase.from('tareas').select('*, perfiles!tareas_asignado_a_fkey(nombre)').eq('caso_id', id).order('creado_en', { ascending: false }),
+      // Usamos alias 'asignado' para mantener consistencia con Tareas.jsx
+      supabase.from('tareas').select('*, asignado:perfiles!tareas_asignado_a_fkey(nombre)').eq('caso_id', id).order('creado_en', { ascending: false }),
       supabase.from('estados_procesales').select('*, perfiles(nombre)').eq('caso_id', id).order('fecha', { ascending: false }),
       supabase.from('perfiles').select('id,nombre,rol').eq('activo', true).order('nombre'),
       supabase.from('clientes').select('id,nombre').order('nombre'),
@@ -367,6 +368,21 @@ export default function CasoDetalle() {
   const etapasDisponibles = caso ? (ETAPAS_POR_TIPO[caso.tipo] || []) : []
   const etapaEsCustom = caso && caso.etapa_procesal && !etapasDisponibles.includes(caso.etapa_procesal)
 
+  // Tareas pendientes (no completadas) ordenadas: vencidas primero, luego por fecha de vencimiento
+  const tareasPendientes = tareas
+    .filter(t => t.estado !== 'completada')
+    .sort((a, b) => {
+      const hoy = hoyEnLima()
+      const aVencida = a.fecha_vencimiento && a.fecha_vencimiento < hoy
+      const bVencida = b.fecha_vencimiento && b.fecha_vencimiento < hoy
+      if (aVencida && !bVencida) return -1
+      if (!aVencida && bVencida) return 1
+      if (a.fecha_vencimiento && !b.fecha_vencimiento) return -1
+      if (!a.fecha_vencimiento && b.fecha_vencimiento) return 1
+      if (a.fecha_vencimiento && b.fecha_vencimiento) return a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)
+      return 0
+    })
+
   if (loading) return <div className="loading-page"><div className="spinner"></div></div>
   if (!caso) return <div style={{ padding: 40, textAlign: 'center' }}>Expediente no encontrado</div>
 
@@ -424,7 +440,7 @@ export default function CasoDetalle() {
           ['estado', `Estado Procesal (${estados.length})`],
           ['documentos', `Documentos (${documentos.length})`],
           ['horas', `Horas (${totalHoras.toFixed(1)}h)`],
-          ['tareas', `Tareas (${tareas.filter(t=>t.estado!=='completada').length})`]
+          ['tareas', `Tareas (${tareasPendientes.length})`]
         ].map(([key, label]) => (
           <div key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</div>
         ))}
@@ -616,12 +632,12 @@ export default function CasoDetalle() {
             </div>
           </div>
 
-          {/* COLUMNA DERECHA: resumen */}
+          {/* COLUMNA DERECHA: resumen + tareas pendientes + último estado */}
           <div>
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>Resumen</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {[['Documentos', documentos.length], ['Horas', totalHoras.toFixed(1) + 'h'], ['Tareas Pend.', tareas.filter(t => t.estado !== 'completada').length], ['Estados', estados.length]].map(([label, val]) => (
+                {[['Documentos', documentos.length], ['Horas', totalHoras.toFixed(1) + 'h'], ['Tareas Pend.', tareasPendientes.length], ['Estados', estados.length]].map(([label, val]) => (
                   <div key={label} style={{ background: 'var(--cream)', borderRadius: 8, padding: '12px 14px' }}>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>{val}</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{label}</div>
@@ -629,6 +645,45 @@ export default function CasoDetalle() {
                 ))}
               </div>
             </div>
+
+            {/* PANEL DE TAREAS PENDIENTES DEL EXPEDIENTE */}
+            {tareasPendientes.length > 0 && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-header" style={{ marginBottom: 12 }}>
+                  <div className="card-title">Tareas Pendientes</div>
+                  <button className="btn btn-outline btn-sm" onClick={() => setTab('tareas')} style={{ fontSize: '0.72rem' }}>
+                    Ver todas
+                  </button>
+                </div>
+                {tareasPendientes.slice(0, 5).map(t => {
+                  const hoy = hoyEnLima()
+                  const vencida = t.fecha_vencimiento && t.fecha_vencimiento < hoy
+                  return (
+                    <div key={t.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <span style={{ fontSize: '1rem', lineHeight: 1 }}>{t.estado === 'en_progreso' ? '🔄' : '⏳'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{t.titulo}</div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span className={`badge badge-${t.prioridad}`} style={{ fontSize: '0.68rem' }}>{t.prioridad}</span>
+                          {t.asignado?.nombre && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>→ {t.asignado.nombre}</span>}
+                          {t.fecha_vencimiento && (
+                            <span style={{ fontSize: '0.72rem', color: vencida ? 'var(--danger)' : 'var(--text-muted)', fontWeight: vencida ? 600 : 400 }}>
+                              {vencida ? '⚠️ ' : ''}{formatearFecha(t.fecha_vencimiento)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {tareasPendientes.length > 5 && (
+                  <div style={{ textAlign: 'center', padding: '8px 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    + {tareasPendientes.length - 5} tarea{tareasPendientes.length - 5 !== 1 ? 's' : ''} más
+                  </div>
+                )}
+              </div>
+            )}
+
             {estados.length > 0 && (
               <div className="card">
                 <div className="card-title" style={{ marginBottom: 12 }}>Último Estado</div>
@@ -803,7 +858,7 @@ export default function CasoDetalle() {
                 {t.descripcion && <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2 }}>{t.descripcion}</div>}
                 <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                   <span className={`badge badge-${t.prioridad}`}>{t.prioridad}</span>
-                  {t.perfiles?.nombre && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>→ {t.perfiles.nombre}</span>}
+                  {t.asignado?.nombre && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>→ {t.asignado.nombre}</span>}
                   {t.fecha_vencimiento && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Vence: {formatearFecha(t.fecha_vencimiento)}</span>}
                 </div>
               </div>
