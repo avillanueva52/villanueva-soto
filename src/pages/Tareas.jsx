@@ -8,16 +8,14 @@ export default function Tareas() {
   const { perfil } = useAuth()
   const [tareas, setTareas] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filtroEstado, setFiltroEstado] = useState('pendiente')
+  // Por defecto mostramos "activas" (pendientes + en progreso) en lugar de solo "pendiente"
+  const [filtroEstado, setFiltroEstado] = useState('activas')
   const [filtroPrioridad, setFiltroPrioridad] = useState('')
   const [filtroMio, setFiltroMio] = useState(false)
 
   useEffect(() => { loadTareas() }, [])
 
   async function loadTareas() {
-    // FIX: damos alias distintos a las dos relaciones con perfiles
-    // (asignado_a y creado_por). Sin alias, Supabase devuelve error 400
-    // silencioso porque no puede tener dos columnas llamadas "perfiles".
     const { data, error } = await supabase.from('tareas')
       .select(`
         *,
@@ -38,7 +36,12 @@ export default function Tareas() {
   }
 
   const filtered = tareas.filter(t => {
-    if (filtroEstado && t.estado !== filtroEstado) return false
+    // Caso especial: "activas" = pendientes + en progreso (no completadas)
+    if (filtroEstado === 'activas') {
+      if (t.estado === 'completada') return false
+    } else if (filtroEstado && t.estado !== filtroEstado) {
+      return false
+    }
     if (filtroPrioridad && t.prioridad !== filtroPrioridad) return false
     if (filtroMio && t.asignado_a !== perfil?.id) return false
     return true
@@ -61,10 +64,11 @@ export default function Tareas() {
 
       <div className="filter-bar">
         <select className="form-select" style={{ width: 'auto' }} value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}>
-          <option value="">Todos los estados</option>
-          <option value="pendiente">Pendientes</option>
-          <option value="en_progreso">En Progreso</option>
-          <option value="completada">Completadas</option>
+          <option value="activas">🟢 Activas (pendientes + en progreso)</option>
+          <option value="pendiente">⏳ Solo Pendientes</option>
+          <option value="en_progreso">🔄 Solo En Progreso</option>
+          <option value="completada">✅ Solo Completadas</option>
+          <option value="">Todas</option>
         </select>
         <select className="form-select" style={{ width: 'auto' }} value={filtroPrioridad} onChange={e => setFiltroPrioridad(e.target.value)}>
           <option value="">Todas las prioridades</option>
