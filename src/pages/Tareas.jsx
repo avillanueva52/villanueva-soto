@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { hoyEnLima, formatearFecha } from '../lib/dateUtils'
 import { useAuth } from '../hooks/useAuth'
-import { CheckSquare, Filter } from 'lucide-react'
+import { CheckSquare } from 'lucide-react'
 
 export default function Tareas() {
   const { perfil } = useAuth()
@@ -15,9 +15,18 @@ export default function Tareas() {
   useEffect(() => { loadTareas() }, [])
 
   async function loadTareas() {
-    const { data } = await supabase.from('tareas')
-      .select('*, casos(titulo, numero_expediente), perfiles!tareas_asignado_a_fkey(nombre), perfiles!tareas_creado_por_fkey(nombre)')
+    // FIX: damos alias distintos a las dos relaciones con perfiles
+    // (asignado_a y creado_por). Sin alias, Supabase devuelve error 400
+    // silencioso porque no puede tener dos columnas llamadas "perfiles".
+    const { data, error } = await supabase.from('tareas')
+      .select(`
+        *,
+        casos(titulo, numero_expediente),
+        asignado:perfiles!tareas_asignado_a_fkey(id, nombre),
+        creador:perfiles!tareas_creado_por_fkey(id, nombre)
+      `)
       .order('fecha_vencimiento', { ascending: true, nullsFirst: false })
+    if (error) console.error('Error cargando tareas:', error)
     setTareas(data || [])
     setLoading(false)
   }
@@ -78,7 +87,16 @@ export default function Tareas() {
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Tarea</th><th>Expediente</th><th>Asignado a</th><th>Prioridad</th><th>Estado</th><th>Vencimiento</th><th></th></tr>
+                <tr>
+                  <th>Tarea</th>
+                  <th>Expediente</th>
+                  <th>Asignado a</th>
+                  <th>Creada por</th>
+                  <th>Prioridad</th>
+                  <th>Estado</th>
+                  <th>Vencimiento</th>
+                  <th></th>
+                </tr>
               </thead>
               <tbody>
                 {filtered.map(t => (
@@ -90,7 +108,8 @@ export default function Tareas() {
                     <td style={{ fontSize: '0.8rem' }}>
                       {t.casos ? <span style={{ fontFamily: 'monospace', color: 'var(--navy)' }}>{t.casos.numero_expediente}</span> : '—'}
                     </td>
-                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{t.perfiles?.nombre || '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{t.asignado?.nombre || '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{t.creador?.nombre || '—'}</td>
                     <td><span className={`badge badge-${t.prioridad}`} style={{ textTransform: 'capitalize' }}>{t.prioridad}</span></td>
                     <td><span style={{ fontSize: '0.8rem' }}>{estadoIcon[t.estado]} {estadoLabel[t.estado]}</span></td>
                     <td>
