@@ -3,7 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { formatearFecha } from '../lib/dateUtils'
-import { ArrowLeft, Edit2, Search, RotateCcw, FolderOpen, Activity, CheckSquare, Trash2 } from 'lucide-react'
+import { descargarCSV } from '../lib/csvExport'
+import { ArrowLeft, Edit2, Search, RotateCcw, FolderOpen, Activity, CheckSquare, Trash2, Download } from 'lucide-react'
 
 const TIPOS = ['civil', 'penal', 'constitucional', 'laboral', 'administrativo', 'consulta']
 const ESTADOS_CASO = ['activo', 'archivado', 'cerrado', 'suspendido']
@@ -35,9 +36,10 @@ export default function ClienteDetalle() {
     setCliente(clienteData)
     setEditForm(clienteData || {})
 
+    // Traemos números judiciales junto con los casos para búsqueda y exportación
     const { data: casosData } = await supabase
       .from('casos')
-      .select('*, perfiles(nombre), horas_trabajadas(horas, perfiles(costo_hora))')
+      .select('*, perfiles(nombre), horas_trabajadas(horas, perfiles(costo_hora)), numeros_expediente(numero, etapa)')
       .eq('cliente_id', id)
       .order('creado_en', { ascending: false })
     setCasos(casosData || [])
@@ -51,7 +53,7 @@ export default function ClienteDetalle() {
           .order('fecha', { ascending: false })
           .limit(8),
         supabase.from('tareas')
-          .select('*, casos(id, titulo, numero_expediente), perfiles!tareas_asignado_a_fkey(nombre)')
+          .select('*, casos(id, titulo, numero_expediente), asignado:perfiles!tareas_asignado_a_fkey(nombre)')
           .in('caso_id', casoIds)
           .order('creado_en', { ascending: false })
           .limit(8)
@@ -95,7 +97,6 @@ export default function ClienteDetalle() {
   }
 
   async function handleEliminarPermanentemente() {
-    // Doble verificación: no permitir si tiene casos asociados
     if (casos.length > 0) {
       alert(
         `No se puede eliminar este cliente.\n\n` +
@@ -106,7 +107,6 @@ export default function ClienteDetalle() {
       return
     }
 
-    // Doble confirmación porque es una acción destructiva irreversible
     const c1 = confirm(
       `⚠️ ELIMINAR PERMANENTEMENTE a "${cliente.nombre}"\n\n` +
       `Esta acción NO se puede deshacer. Todos los datos del cliente se borrarán definitivamente.\n\n` +
@@ -128,11 +128,54 @@ export default function ClienteDetalle() {
   }
 
   const casosFiltrados = casos.filter(c => {
-    const matchSearch = !search || c.titulo.toLowerCase().includes(search.toLowerCase()) || c.numero_expediente.toLowerCase().includes(search.toLowerCase())
+    const searchLower = search.toLowerCase()
+    const matchSearch = !search ||
+      c.titulo.toLowerCase().includes(searchLower) ||
+      c.numero_expediente.toLowerCase().includes(searchLower) ||
+      // NUEVO: buscar también en los números judiciales
+      (c.numeros_expediente || []).some(n => n.numero?.toLowerCase().includes(searchLower))
     const matchTipo = !filtroTipo || c.tipo === filtroTipo
     const matchEstado = !filtroEstado || c.estado === filtroEstado
     return matchSearch && matchTipo && matchEstado
   })
+
+  function handleExportarCasos() {
+    if (casosFiltrados.length === 0) {
+      alert('No hay expedientes para exportar con los filtros actuales.')
+      return
+    }
+    const headers = [
+      'N° Expediente Interno',
+      'Título',
+      'Tipo',
+      'Estado',
+      'Etapa Procesal',
+      'Abogado Responsable',
+      'Juzgado',
+      'Juez',
+      'Fecha Inicio',
+      'Fecha Cierre',
+      'Números Judiciales',
+      'Descripción'
+    ]
+    const rows = casosFiltrados.map(c => [
+      c.numero_expediente,
+      c.titulo,
+      c.tipo,
+      c.estado,
+      c.etapa_procesal || '',
+      c.perfiles?.nombre || '',
+      c.juzgado || '',
+      c.juez_nombre || '',
+      c.fecha_inicio || '',
+      c.fecha_cierre || '',
+      (c.numeros_expediente || []).map(n => `${n.etapa}: ${n.numero}`).join(' | '),
+      c.descripcion || ''
+    ])
+    const nombreCliente = (cliente?.nombre || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)
+    const hoy = new Date().toISOString().slice(0, 10)
+    descargarCSV(`expedientes_${nombreCliente}_${hoy}.csv`, headers, rows)
+  }
 
   const casosActivos = casos.filter(c => c.estado === 'activo').length
   const casosCerrados = casos.filter(c => c.estado === 'cerrado' || c.estado === 'archivado').length
@@ -252,6 +295,11 @@ export default function ClienteDetalle() {
         <div className="card">
           <div className="card-header">
             <div className="card-title">Expedientes del Cliente</div>
+            {casos.length > 0 && (
+              <button className="btn btn-outline btn-sm" onClick={handleExportarCasos} title="Descargar los expedientes filtrados como archivo Excel (CSV)">
+                <Download size={14} />Exportar a Excel
+              </button>
+            )}
           </div>
 
           {casos.length === 0 ? (
@@ -259,9 +307,9 @@ export default function ClienteDetalle() {
           ) : (
             <>
               <div className="filter-bar" style={{ marginBottom: 16 }}>
-                <div className="search-bar" style={{ flex: 1, maxWidth: 360 }}>
+                <div className="search-bar" style={{ flex: 1, maxWidth: 420 }}>
                   <Search size={15} color="var(--text-muted)" />
-                  <input placeholder="Buscar por título o expediente..." value={search} onChange={e => setSearch(e.target.value)} />
+                  <input placeholder="Buscar por título, N° interno o N° judicial..." value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
                 <select className="form-select" style={{ width: 'auto' }} value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}>
                   <option value="">Todos los tipos</option>
@@ -292,7 +340,14 @@ export default function ClienteDetalle() {
                       </td></tr>
                     ) : casosFiltrados.map(c => (
                       <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/casos/${c.id}`)}>
-                        <td style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--navy)' }}>{c.numero_expediente}</td>
+                        <td style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--navy)' }}>
+                          <div>{c.numero_expediente}</div>
+                          {search && (c.numeros_expediente || []).some(n => n.numero?.toLowerCase().includes(search.toLowerCase())) && (
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2, fontWeight: 400 }}>
+                              {(c.numeros_expediente || []).filter(n => n.numero?.toLowerCase().includes(search.toLowerCase())).map(n => `${n.etapa}: ${n.numero}`).join(' · ')}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ fontWeight: 500, maxWidth: 280 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.titulo}</div></td>
                         <td style={{ color: 'var(--text-secondary)' }}>{c.perfiles?.nombre || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                         <td><span className={`badge badge-${c.tipo}`} style={{ textTransform: 'capitalize' }}>{c.tipo}</span></td>
@@ -353,7 +408,7 @@ export default function ClienteDetalle() {
                     </div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3 }}>
                       <span style={{ color: 'var(--navy)', fontFamily: 'monospace' }}>{t.casos?.numero_expediente}</span>
-                      {t.perfiles?.nombre && ` · ${t.perfiles.nombre}`}
+                      {t.asignado?.nombre && ` · ${t.asignado.nombre}`}
                       {t.fecha_vencimiento && ` · Vence: ${formatearFecha(t.fecha_vencimiento)}`}
                     </div>
                   </Link>
