@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { hoyEnLima, formatearFecha } from '../lib/dateUtils'
+import { descargarCSV } from '../lib/csvExport'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, FolderOpen } from 'lucide-react'
+import { Plus, Search, FolderOpen, Download } from 'lucide-react'
 
 const TIPOS = ['civil', 'penal', 'constitucional', 'laboral', 'administrativo', 'consulta']
 const ESTADOS = ['activo', 'archivado', 'cerrado', 'suspendido']
@@ -27,8 +28,10 @@ export default function Casos() {
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
+    // Traemos los números de expediente judicial junto con los casos
+    // para poder buscar por ellos y exportarlos.
     const [casosRes, clientesRes, abogadosRes] = await Promise.all([
-      supabase.from('casos').select('*, clientes(nombre), perfiles(nombre)').order('creado_en', { ascending: false }),
+      supabase.from('casos').select('*, clientes(nombre), perfiles(nombre), numeros_expediente(numero, etapa)').order('creado_en', { ascending: false }),
       supabase.from('clientes').select('id, nombre').order('nombre'),
       supabase.from('perfiles').select('id, nombre, rol').eq('activo', true).order('nombre')
     ])
@@ -42,7 +45,6 @@ export default function Casos() {
     e.preventDefault()
     setSaving(true)
     setError('')
-    // Extraemos el primer número judicial del form para guardarlo en la tabla nueva
     const { primer_numero_judicial, ...payload } = {
       ...form,
       cliente_id: form.cliente_id || null,
@@ -51,7 +53,6 @@ export default function Casos() {
     const { data: nuevoCaso, error: errorCaso } = await supabase.from('casos').insert(payload).select().single()
     if (errorCaso) { setError(errorCaso.message); setSaving(false); return }
 
-    // Si el usuario ingresó un primer número de expediente judicial, lo guardamos en la nueva tabla
     if (primer_numero_judicial && primer_numero_judicial.trim()) {
       await supabase.from('numeros_expediente').insert({
         caso_id: nuevoCaso.id,
@@ -67,12 +68,57 @@ export default function Casos() {
   }
 
   const filtered = casos.filter(c => {
-    const matchSearch = !search || c.titulo.toLowerCase().includes(search.toLowerCase()) || c.numero_expediente.toLowerCase().includes(search.toLowerCase()) || c.clientes?.nombre?.toLowerCase().includes(search.toLowerCase())
+    const searchLower = search.toLowerCase()
+    const matchSearch = !search ||
+      c.titulo.toLowerCase().includes(searchLower) ||
+      c.numero_expediente.toLowerCase().includes(searchLower) ||
+      c.clientes?.nombre?.toLowerCase().includes(searchLower) ||
+      // NUEVO: buscar también en los números de expediente judicial
+      (c.numeros_expediente || []).some(n => n.numero?.toLowerCase().includes(searchLower))
     const matchTipo = !filtroTipo || c.tipo === filtroTipo
     const matchEstado = !filtroEstado || c.estado === filtroEstado
     const matchAbogado = !filtroAbogado || c.abogado_responsable_id === filtroAbogado
     return matchSearch && matchTipo && matchEstado && matchAbogado
   })
+
+  function handleExportar() {
+    if (filtered.length === 0) {
+      alert('No hay expedientes para exportar con los filtros actuales.')
+      return
+    }
+    const headers = [
+      'N° Expediente Interno',
+      'Título',
+      'Cliente',
+      'Tipo',
+      'Estado',
+      'Etapa Procesal',
+      'Abogado Responsable',
+      'Juzgado',
+      'Juez',
+      'Fecha Inicio',
+      'Fecha Cierre',
+      'Números Judiciales',
+      'Descripción'
+    ]
+    const rows = filtered.map(c => [
+      c.numero_expediente,
+      c.titulo,
+      c.clientes?.nombre || '',
+      c.tipo,
+      c.estado,
+      c.etapa_procesal || '',
+      c.perfiles?.nombre || '',
+      c.juzgado || '',
+      c.juez_nombre || '',
+      c.fecha_inicio || '',
+      c.fecha_cierre || '',
+      (c.numeros_expediente || []).map(n => `${n.etapa}: ${n.numero}`).join(' | '),
+      c.descripcion || ''
+    ])
+    const hoy = new Date().toISOString().slice(0, 10)
+    descargarCSV(`expedientes_${hoy}.csv`, headers, rows)
+  }
 
   return (
     <div>
@@ -81,13 +127,18 @@ export default function Casos() {
           <div className="page-title">Expedientes</div>
           <div className="page-subtitle">{filtered.length} expediente{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}</div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={16} />Nuevo Expediente</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-outline" onClick={handleExportar} title="Descargar el listado filtrado como archivo Excel (CSV)">
+            <Download size={16} />Exportar a Excel
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={16} />Nuevo Expediente</button>
+        </div>
       </div>
 
       <div className="filter-bar">
-        <div className="search-bar" style={{ flex: 1, maxWidth: 360 }}>
+        <div className="search-bar" style={{ flex: 1, maxWidth: 420 }}>
           <Search size={15} color="var(--text-muted)" />
-          <input placeholder="Buscar por título, expediente o cliente..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input placeholder="Buscar por título, N° interno, N° judicial o cliente..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <select className="form-select" style={{ width: 'auto' }} value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}>
           <option value="">Todos los tipos</option>
@@ -127,7 +178,15 @@ export default function Casos() {
                   </td></tr>
                 ) : filtered.map(c => (
                   <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/casos/${c.id}`)}>
-                    <td style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--navy)' }}>{c.numero_expediente}</td>
+                    <td style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--navy)' }}>
+                      <div>{c.numero_expediente}</div>
+                      {/* Si el caso tiene números judiciales y la búsqueda coincide con alguno, lo mostramos abajo para dar contexto */}
+                      {search && (c.numeros_expediente || []).some(n => n.numero?.toLowerCase().includes(search.toLowerCase())) && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2, fontWeight: 400 }}>
+                          {(c.numeros_expediente || []).filter(n => n.numero?.toLowerCase().includes(search.toLowerCase())).map(n => `${n.etapa}: ${n.numero}`).join(' · ')}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ fontWeight: 500, maxWidth: 280 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.titulo}</div></td>
                     <td style={{ color: 'var(--text-secondary)' }}>{c.clientes?.nombre || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{c.perfiles?.nombre || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
